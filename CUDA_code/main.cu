@@ -1,5 +1,5 @@
 #include <math.h>
-#include <unistd.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <cuda.h>
@@ -23,10 +23,9 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 
 int main(int argc, char** argv) {
 
-int num_ens = atoi(argv[1]); // number of classes
-int p=50; // need this for symmetric freq dist // num_ens=2p+1
+const int num_ens = atoi(argv[1]); // number of classes
+const int p=50; // need this for symmetric freq dist // num_ens=2p+1
 int N_total = atoi(argv[2]); // number of spins
-
 
 clock_t ct0,ct1;
 ct0 = clock();
