@@ -21,6 +21,21 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 }
 
 
+/**
+Arguments
+POSITION	VARNAME		NOTES
+---------------------------------------------
+argv[1]		num_ens: 	number of classes
+argv[2]		N_total: 	number of spins
+argv[3]		delta: 		?
+argv[4]		delta1: 	? (or phi_0 = delta1*PI;)
+argv[5]		(unused):	? (not in used)
+argv[6]		theta_0:	atof(argv[6])*PI;  / INTIAL STATE...... PI FOR EXCITED STATE AND (PI*0.5) FOR EQUAL SUPERPOSITION
+argv[7]		t_max:		T_END
+argv[8]		t_num:		NUMBER OF STEPS
+argv[9]		coup_a_0:	// ATOM CAVITY COUPLING
+
+*/
 int main(int argc, char** argv) {
 int num_ens = atoi(argv[1]); // number of classes
 int p=50; // need this for symmetric freq dist // num_ens=2p+1
