@@ -22,18 +22,18 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 
 
 int main(int argc, char** argv) {
-
-const int num_ens = atoi(argv[1]); // number of classes
-const int p=50; // need this for symmetric freq dist // num_ens=2p+1
+int num_ens = atoi(argv[1]); // number of classes
+int p=50; // need this for symmetric freq dist // num_ens=2p+1
 int N_total = atoi(argv[2]); // number of spins
 
 clock_t ct0,ct1;
 ct0 = clock();
-double axe[p+1];
+// double axe[p+1];
+double* axe = new double[p+1];  // SGK
 int ens_size = N_total/num_ens;
 double phi_0 = atof(argv[4])*PI;
-double inhomo[num_ens];
-
+// double inhomo[num_ens];
+double* inhomo = new double[num_ens];  // SGK
 
 
 double b= 0.999999;
@@ -168,9 +168,16 @@ int t_store =  t_num/t_store_num;
 
 
 
-double N_a[num_ens],omega_a[num_ens],gamma_a[num_ens],\
+// double N_a[num_ens],omega_a[num_ens],gamma_a[num_ens],\
 		eta_a[num_ens],chi_a[num_ens],coup_a[num_ens],loss_a[num_ens];
-
+double* N_a = new double[num_ens];
+double* omega_a = new double[num_ens];
+double* gamma_a = new double[num_ens];
+double* eta_a = new double[num_ens];
+double* chi_a = new double[num_ens];
+double* coup_a = new double[num_ens];
+double* loss_a = new double[num_ens];
+ // SGK
 
 for (int i =0; i < num_ens; i++){
 	N_a[i] = ens_size;
@@ -184,7 +191,10 @@ for (int i =0; i < num_ens; i++){
 
 
 // the parameters in an array 
-double para_a[7*num_ens];
+// double para_a[7*num_ens];
+// SGK
+double* para_a = new double[7*num_ens];
+
 for  (int i = 0; i < num_ens; i++){
 	para_a[i] = N_a[i];
 	para_a[i+num_ens] = omega_a[i];
@@ -205,13 +215,21 @@ cudaMemcpy(para_a_dev,para_a,6*num_ens*sizeof(double),cudaMemcpyHostToDevice);
 // parameters for initial states 
 
 
-double theta[num_ens],phi[num_ens];
+// double theta[num_ens],phi[num_ens];
+// SGK
+double* theta = new double[num_ens];
+double* phi = new double[num_ens];
+
 for (int i=0; i < num_ens; i++){
 	theta[i] = theta_0;
 	phi[i] = phi_0;
 }
 
-double2 cu[num_ens],cl[num_ens];
+// double2 cu[num_ens],cl[num_ens];
+// SGK
+double2* cu = new double2[num_ens];
+double2* cl = new double2[num_ens];
+
 for (int i=0; i< num_ens; i++){
 	cu[i].x = sin(0.5*theta[i])*cos(phi[i]);
 	cu[i].y = sin(0.5*theta[i])*sin(phi[i]);
@@ -251,9 +269,19 @@ cudaMemcpy(t_step_dev,&t_step,sizeof(double),cudaMemcpyHostToDevice);
 
 // on CPU side 
 double2 ap_a,a,a_a;
-double2 sz[num_ens],sm[num_ens],a_sz[num_ens],a_sm[num_ens],a_sp[num_ens];
-double2 sm_sp[num_ens*num_ens],sm_sz[num_ens*num_ens],\
+// double2 sz[num_ens],sm[num_ens],a_sz[num_ens],a_sm[num_ens],a_sp[num_ens];
+// double2 sm_sp[num_ens*num_ens],sm_sz[num_ens*num_ens],\
 	sm_sm[num_ens*num_ens],sz_sz[num_ens*num_ens];
+
+double2* sz = new double2[num_ens];
+double2* sm = new double2[num_ens];
+double2* a_sz = new double2[num_ens];
+double2* a_sm = new double2[num_ens];
+double2* a_sp = new double2[num_ens];
+double2* sm_sp = new double2[num_ens*num_ens];
+double2* sm_sz = new double2[num_ens*num_ens];
+double2* sm_sm = new double2[num_ens*num_ens];
+double2* sz_sz = new double2[num_ens*num_ens];
 
 // for initial values 
 double2 sm_1,sp_1,sz_1,sm_2,sz_2; 
