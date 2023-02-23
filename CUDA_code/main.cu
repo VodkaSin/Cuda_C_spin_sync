@@ -23,20 +23,37 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 
 /**
 Arguments
-POSITION	VARNAME		NOTES
+POSITION	VARNAME		TYPE	NOTES
 ---------------------------------------------
-argv[1]		num_ens: 	number of classes
-argv[2]		N_total: 	number of spins
-argv[3]		delta: 		?
-argv[4]		delta1: 	? (or phi_0 = delta1*PI;)
-argv[5]		(unused):	? (not in used)
-argv[6]		theta_0:	atof(argv[6])*PI;  / INTIAL STATE...... PI FOR EXCITED STATE AND (PI*0.5) FOR EQUAL SUPERPOSITION
-argv[7]		t_max:		T_END
-argv[8]		t_num:		NUMBER OF STEPS
-argv[9]		coup_a_0:	// ATOM CAVITY COUPLING
+argv[1]		num_ens: 	int		number of classes
+argv[2]		N_total: 	int		number of spins
+argv[3]		delta: 		float	?
+argv[4]		delta1: 	float	phi_0 = delta1*PI; Coefficient of phase
+argv[5]		(unused):	string	? (not in used, just put in any string, for e.g "_")
+argv[6]		theta_0:	float	argv[6)*PI;  INTIAL STATE...... 1 FOR EXCITED STATE AND 0.5 FOR EQUAL SUPERPOSITION
+argv[7]		t_max:		float	T_END
+argv[8]		t_num:		int		NUMBER OF STEPS
+argv[9]		coup_a_0:	float	ATOM CAVITY COUPLING
+
+Example run:
+file.exe 1 100 5 0.5 _ 0.5 0.5 1000 1.6
+
+To compile:
+nvcc -w functions.cu main.cu -o file
 
 */
 int main(int argc, char** argv) {
+
+printf("num_ens:\t%s\n", argv[1]);
+printf("N_total:\t%s\n", argv[2]);
+printf("delta:\t\t%s\n", argv[3]);
+printf("delta1:\t\t%s\n", argv[4]);
+printf("(unused):\t%s\n", argv[5]);
+printf("theta_0:\t%s\n", argv[6]);
+printf("t_max:\t\t%s\n", argv[7]);
+printf("t_num:\t\t%s\n", argv[8]);
+printf("coup_a_0:\t%s\n", argv[9]);
+
 int num_ens = atoi(argv[1]); // number of classes
 int p=50; // need this for symmetric freq dist // num_ens=2p+1
 int N_total = atoi(argv[2]); // number of spins
