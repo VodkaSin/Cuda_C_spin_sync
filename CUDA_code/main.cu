@@ -57,7 +57,7 @@ file.exe 1 100 5 0.5 _ 0.5 0.5 20000 1.6
 To compile:
 nvcc -w functions.cu main.cu -o file
 
-To compile and run in one lines
+To compile and run in one line
 cls && nvcc -w functions.cu main.cu -o file && file.exe 5 100 5 0.5 _ 0.5 0.5 20000 1.6
 
 */
