@@ -43,8 +43,9 @@ argv[5]		coup_a_0:	float	Cavity-atom coupling strength
 argv[6]		gamma_a_0:	float	Atom decay rate
 argv[7]		chi_a_0:	float	Atom dephase rate
 argv[8]		kappa_c_0:	float	Cavity decay rate
-argv[8]		t_max:		float	Simulation end time
-argv[8]		t_num:		int		Number of steps
+argv[9]		t_max:		float	Simulation end time
+argv[10]	t_num:		int		Number of steps
+argv[11]	handle: 	char	File handle to save
 
 Example run:
 file.exe 1 100 5 0.5 _ 0.5 0.5 20000 1.6
@@ -61,16 +62,16 @@ cls && nvcc -w functions.cu main.cu -o file && file.exe 5 100 5 0.5 _ 0.5 0.5 20
 int main(int argc, char** argv) {
 
 	// Print input values
-	printf("num_ens:\t\t%s\n", argv[1]);
-	printf("N_total:\t\t%s\n", argv[2]);
-	printf("theta_0:\t\t%s\n", argv[3]);
-	printf("phi_0:\t\t%s\n", argv[4]);
-	printf("coup_a_0:\t%s\n", argv[5]);
-	printf("gamma_a_0 (atom decay):\t%s\n", argv[6]);
-	printf("chi_a_0 (atom dephase):\t%s\n", argv[7]);
+	printf("num_ens:\t\t\t%s\n", argv[1]);
+	printf("N_total:\t\t\t%s\n", argv[2]);
+	printf("theta_0:\t\t\t%s\n", argv[3]);
+	printf("phi_0:\t\t\t\t%s\n", argv[4]);
+	printf("coup_a_0:\t\t\t%s\n", argv[5]);
+	printf("gamma_a_0 (atom decay):\t\t%s\n", argv[6]);
+	printf("chi_a_0 (atom dephase):\t\t%s\n", argv[7]);
 	printf("kappa_c_0 (cavity decay):\t%s\n", argv[8]);
-	printf("t_max:\t\t%s\n", argv[9]);
-	printf("t_num:\t\t%s\n", argv[10]);
+	printf("t_max:\t\t\t\t%s\n", argv[9]);
+	printf("t_num:\t\t\t\t%s\n", argv[10]);
 
 	//************************************************************************************** INITIAL PARAM *********************************
 	// Ensemble settings
@@ -109,6 +110,9 @@ int main(int argc, char** argv) {
 		printf("[invalid param] Specify a 't_num' larger than or equal to %i", t_store_num);
 		return;
 	}
+
+	// File handle
+	char* handle = argv[11];
 
 	// double inhomo[num_ens];
 	double* inhomo = new double[num_ens];  // SGK
@@ -345,19 +349,28 @@ int main(int argc, char** argv) {
 	cudaMalloc((void**)&d_sm_sm_dev,num_ens*num_ens*sizeof(double2));
 	cudaMalloc((void**)&d_sz_sz_dev,num_ens*num_ens*sizeof(double2));
 
-	FILE *Result_time,*Result_Sz,*Result_Sm,*Result_photon,*Result_field, *coherences_real, *coherences_imag;
+	FILE *Result_time, *Result_Sz, *Result_photon, *Result_coherences_real;
+	
 	// time of simulation
-	Result_time = fopen("Result_time.dat","w");
-	Result_Sz = fopen("Result_Sz.dat","w");
-	Result_photon = fopen("Result_photon.dat","w");
-	Result_field = fopen("Result_field.dat","w");
-	Result_Sm = fopen("Result_Sm.dat","w");
-	coherences_real = fopen("coherences_real.dat","w");
+
+	char fname1[100];
+	char fname2[100];
+	char fname3[100];
+	char fname4[100];
 
 
+	snprintf(fname1, 100, "Result_time_%s.dat", handle);
+	Result_time = fopen(fname1,"w");
+	
+	
+	snprintf(fname2, 100, "Result_Sz_%s.dat", handle);
+	Result_Sz = fopen(fname2,"w");
 
+	snprintf(fname3, 100, "Result_photon_%s.dat", handle);
+	Result_photon= fopen(fname3,"w");
 
-
+	snprintf(fname4, 100, "Result_coherences_real_%s.dat", handle);
+	Result_coherences_real= fopen(fname4,"w");
 
 
 	// ***********************************
@@ -370,40 +383,39 @@ int main(int argc, char** argv) {
 
 	// update the old reduced density matrix 
 	for (int t = 1; t < t_num; t++){
-
 		// printf("t %i of t_num %i, tc %1f \n", t, t_num, tc);
 		tc = t*t_step;
 		// printf("tc %1f \n", tc);
 
-	//************************************
-	// calculate derivatives 
+		//************************************
+		// calculate derivatives 
 
-	// calculate the photon observables
-	// ap_a, a, a_a 
+		// calculate the photon observables
+		// ap_a, a, a_a 
 		calculate_photons<<<1,1>>>(tc,num_ens,para_a_dev,para_c_dev,\
 					ap_a_dev,a_dev,a_a_dev,\
 					a_sp_dev,sm_dev,a_sm_dev,\
 					d_ap_a_dev,d_a_dev,d_a_a_dev);
 		cudaThreadSynchronize();
 
-	// calculate the atomic observables and atom-photon correlations
-	// sz, sm, a_sz, a_sm, a_sp 
+		// calculate the atomic observables and atom-photon correlations
+		// sz, sm, a_sz, a_sm, a_sp 
 		calculate_atoms<<<1,num_ens>>>(tc,num_ens,para_a_dev,para_c_dev,\
 						sz_dev,sm_dev,a_sz_dev,a_sm_dev,a_sp_dev,\
 						sm_sp_dev,sm_sm_dev,sm_sz_dev,a_dev,ap_a_dev,a_a_dev,\
 						d_sz_dev,d_sm_dev,d_a_sz_dev,d_a_sm_dev,d_a_sp_dev);
 		cudaThreadSynchronize();
 
-	// calculate the atom-atom correlations 
-	// sm_sp, sm_sz, sm_sm, sz_sz
+		// calculate the atom-atom correlations 
+		// sm_sp, sm_sz, sm_sm, sz_sz
 		calculate_correlations<<<num_ens,num_ens>>>(num_ens,t_step,para_a_dev,para_c_dev,\
 							sm_sp_dev,sm_sz_dev,sm_sm_dev,sz_sz_dev,\
 							a_dev,a_sm_dev,a_sp_dev,a_sz_dev,sm_dev,sz_dev,\
 							d_sm_sp_dev,d_sm_sz_dev,d_sm_sm_dev,d_sz_sz_dev);
 		cudaThreadSynchronize();
 
-	//*************************************
-	// update observables
+		//*************************************
+		// update observables
 
 		update_photons<<<1,1>>>(t_step,ap_a_dev,a_dev,a_a_dev,\
 					d_ap_a_dev,d_a_dev,d_a_a_dev);
@@ -429,24 +441,19 @@ int main(int argc, char** argv) {
 			cudaMemcpy(&a,a_dev,sizeof(double2),cudaMemcpyDeviceToHost);
 			cudaThreadSynchronize();
 
-
-
 		// store the file
 			fprintf(Result_time,"%e \n",(double)t*t_step);
 			fprintf(Result_photon,"%e \n",ap_a.x);
-			fprintf(Result_field,"%e %e \n",a.x,a.y);
 			//printf("%1f	%e	\n",tc, ap_a.x);
 		
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 			for (int i = 0; i < num_ens; i++) {
 				fprintf(Result_Sz,"%e ",sz[i].x);
-				fprintf(Result_Sm,"%e %e  ",sm[i].x, sm[i].y);
-				fprintf(coherences_real,"%e ",sm_sp[i].x);
+				fprintf(Result_coherences_real,"%e ",sm_sp[i].x);
 			}
 			fprintf(Result_Sz,"\n");
-			fprintf(Result_Sm,"\n");
-			fprintf(coherences_real,"\n");
+			fprintf(Result_coherences_real,"\n");
 			
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		}
@@ -457,8 +464,7 @@ int main(int argc, char** argv) {
 	fclose(Result_time);
 	fclose(Result_Sz);
 	fclose(Result_photon);
-	fclose(Result_field);
-	fclose(coherences_real);
+	fclose(Result_coherences_real);
 
 
 	// close the memories 
