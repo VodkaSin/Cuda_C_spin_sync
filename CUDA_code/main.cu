@@ -20,6 +20,22 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
    }
 }
 
+// print_double_arr Helper function to print double arr 
+void print_double_arr(string name, double* arr, int size) {
+	for (int i=0; i<size; i++){
+    printf("%s[%i]=%f\n", name, i, arr[i]);
+  }
+  printf("\n");
+}
+
+// print_double2_arr Helper function to print double2 arr 
+void print_double2_arr(string name, double2* arr, int size) {
+	for (int i=0; i<size; i++){
+    printf("%s[%i]=(%f,%f)\n", name, i, arr[i].x, arr[i].y);
+  }
+  printf("\n");
+}
+
 
 /**
 Arguments
@@ -32,14 +48,17 @@ argv[4]		delta1: 	float	phi_0 = delta1*PI; Coefficient of phase
 argv[5]		(unused):	string	? (not in used, just put in any string, for e.g "_")
 argv[6]		theta_0:	float	argv[6)*PI;  INTIAL STATE...... 1 FOR EXCITED STATE AND 0.5 FOR EQUAL SUPERPOSITION
 argv[7]		t_max:		float	T_END
-argv[8]		t_num:		int		NUMBER OF STEPS
+argv[8]		t_num:		int		NUMBER OF STEPS, (Must be >=20000)
 argv[9]		coup_a_0:	float	ATOM CAVITY COUPLING
 
 Example run:
-file.exe 1 100 5 0.5 _ 0.5 0.5 1000 1.6
+file.exe 1 100 5 0.5 _ 0.5 0.5 20000 1.6
 
 To compile:
 nvcc -w functions.cu main.cu -o file
+
+To compile and run in one line
+cls && nvcc -w functions.cu main.cu -o file && file.exe 5 100 5 0.5 _ 0.5 0.5 20000 1.6
 
 */
 int main(int argc, char** argv) {
@@ -156,7 +175,7 @@ fprintf(Detuning,"%e \n",inhomo[1]);
 fclose(Detuning);
 }
 
-
+print_double_arr("inhomo", inhomo, num_ens);
 
 //********************************************************************************************* PARAMETERS AND DEFINITIONS ********************************************************
 // Unit in kHz * 2pi
@@ -199,6 +218,11 @@ int t_store =  t_num/t_store_num;
 //***************************************************************************************** INITIALIZATION & PROGRAM BEGINS HERE **************************************************
 
 
+// SGK check that t_num is larger than t_store_num, or it won't complete a run.
+if (t_num < t_store_num) {
+	printf("[invalid param] Specify a 't_num' larger than or equal to %i", t_store_num);
+	return;
+}
 
 // double N_a[num_ens],omega_a[num_ens],gamma_a[num_ens],\
 		eta_a[num_ens],chi_a[num_ens],coup_a[num_ens],loss_a[num_ens];
@@ -221,6 +245,14 @@ for (int i =0; i < num_ens; i++){
 	loss_a[i] = loss_0;
 }
 
+print_double_arr("N_a", N_a, num_ens);
+print_double_arr("omega_a", omega_a, num_ens);
+print_double_arr("gamma_a", gamma_a, num_ens);
+print_double_arr("eta_a", eta_a, num_ens);
+print_double_arr("chi_a", chi_a, num_ens);
+print_double_arr("coup_a", coup_a, num_ens);
+print_double_arr("loss_a", loss_a, num_ens);
+
 
 // the parameters in an array 
 // double para_a[7*num_ens];
@@ -237,6 +269,7 @@ for  (int i = 0; i < num_ens; i++){
 	para_a[i+6*num_ens] = loss_a[i];
 }
 
+print_double_arr("para_a", para_a, 7*num_ens);
 
 // copy the parameters into the memory in GPU
 double *para_a_dev;
@@ -257,6 +290,9 @@ for (int i=0; i < num_ens; i++){
 	phi[i] = phi_0;
 }
 
+print_double_arr("theta", theta, num_ens);
+print_double_arr("phi", phi, num_ens);
+
 // double2 cu[num_ens],cl[num_ens];
 // SGK
 double2* cu = new double2[num_ens];
@@ -270,8 +306,8 @@ for (int i=0; i< num_ens; i++){
 	cl[i].y = 0.; 
 }
 
-
-
+print_double2_arr("cu", cu, num_ens);
+print_double2_arr("cl", cl, num_ens);
 
 double para_c[9];
 para_c[0] = omega_c;
@@ -356,6 +392,16 @@ for (int i= 0; i < num_ens; i++){
 		sz_sz[j + i*num_ens].y = sz_2.x*sz_1.y + sz_2.y*sz_1.x;	
 	}
 }
+
+print_double2_arr("sz", sz, num_ens);
+print_double2_arr("sm", sm, num_ens);
+print_double2_arr("a_sz", a_sz, num_ens);
+print_double2_arr("a_sm", a_sm, num_ens);
+print_double2_arr("a_sp", a_sp, num_ens);
+print_double2_arr("sm_sp", sm_sp, num_ens*num_ens);
+print_double2_arr("sm_sz", sm_sz, num_ens*num_ens);
+print_double2_arr("sm_sm", sm_sm, num_ens*num_ens);
+print_double2_arr("sz_sz", sz_sz, num_ens*num_ens);
 
 // on GUP side 
 double2 *ap_a_dev,*a_dev,*a_a_dev;
@@ -442,8 +488,9 @@ double tc;
 // update the old reduced density matrix 
 for (int t = 1; t < t_num; t++){
 
+	// printf("t %i of t_num %i, tc %1f \n", t, t_num, tc);
 	tc = t*t_step;
-	//printf("%1f \n", tc);
+	// printf("tc %1f \n", tc);
 
 //************************************
 // calculate derivatives 
@@ -551,9 +598,32 @@ cudaFree(d_a_sm_dev);cudaFree(d_a_sp_dev);
 cudaFree(d_sm_sp_dev); cudaFree(d_sm_sz_dev);
 cudaFree(d_sm_sm_dev); cudaFree(d_sz_sz_dev);
 
-
+delete[] axe;
+delete[] inhomo;
+delete[] N_a;
+delete[] omega_a;
+delete[] gamma_a;
+delete[] eta_a;
+delete[] chi_a;
+delete[] coup_a;
+delete[] loss_a;
+delete[] para_a;
+delete[] theta;
+delete[] phi;
+delete[] cu;
+delete[] cl;
+delete[] sz;
+delete[] sm;
+delete[] a_sz;
+delete[] a_sm;
+delete[] a_sp;
+delete[] sm_sp;
+delete[] sm_sz;
+delete[] sm_sm;
+delete[] sz_sz;
 
 ct1=clock();
-fprintf(stderr,"Program takes about %.2f s\n",(double)(ct1-ct0)/(double)CLOCKS_PER_SEC);
+// fprintf(stderr,"Program takes about %.2f s\n",(double)(ct1-ct0)/(double)CLOCKS_PER_SEC);
+printf("Program takes about %.2f s\n",(double)(ct1-ct0)/(double)CLOCKS_PER_SEC);
 return 0;
 }
