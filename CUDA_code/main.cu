@@ -47,6 +47,7 @@ argv[9]		t_max:		float	Simulation end time
 argv[10]	t_num:		int		Number of steps
 argv[11]	handle: 	char	File handle to save
 
+
 Example run:
 file.exe 1 100 5 0.5 _ 0.5 0.5 20000 1.6
 
@@ -352,7 +353,9 @@ int main(int argc, char** argv) {
 	FILE *Result_time, *Result_Sz, *Result_photon, *Result_coherences_real;
 	
 	// time of simulation
-
+	//************************************************************************************** OPEN FILE *********************************
+		// Warning: handle must not be longer than 60 characters = keep it short
+		// Space is allowed, just enclose with ""
 	char fname1[100];
 	char fname2[100];
 	char fname3[100];
