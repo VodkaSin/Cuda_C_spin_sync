@@ -355,7 +355,7 @@ int main(int argc, char** argv) {
 	// time of simulation
 	//************************************************************************************** OPEN FILE *********************************
 		// Warning: handle must not be longer than 60 characters = keep it short
-		// Space is allowed, just enclose with ""
+		// Space is allowed, just enclose with 
 	char fname1[100];
 	char fname2[100];
 	char fname3[100];
