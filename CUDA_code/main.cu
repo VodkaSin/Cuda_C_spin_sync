@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
 	printf("t_max:\t\t\t\t%s\n", argv[9]);
 	printf("t_num:\t\t\t\t%s\n", argv[10]);
 
-	//************************************************************************************** INITIAL PARAM *********************************
+	//************************************************************************** INITIAL PARAM *********************************
 	// Ensemble settings
 	int num_ens = atoi(argv[1]); 	// Number of classes
 	int N_total = atoi(argv[2]); 	// Number of spins
@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
 	double kappa_2_c = 1.0*100.0;		// RIGHT MIRROR DECAY
 	double eta_a_0 =   0.0;				// ATOM PUMPING
 
-	//************************************************************************************** TIME CONSTANTS ********************************
+	//************************************************************************** TIME CONSTANTS ********************************
 	double t_max = atof(argv[9]);					// T_END
 	int t_num = atoi(argv[10]);						// NUMBER OF STEPS
 	double t_step = t_max/t_num;					// dT (SIZE OF EACH STEP)
@@ -125,7 +125,7 @@ int main(int argc, char** argv) {
 	double sqrthalf = 0.707;
 	// Deleted
 
-	//********************************************************************************************* PARAMETERS FOR SQUARE PULSE ********************************************************
+	//************************************************************************** PARAMETERS FOR SQUARE PULSE ************************
 
 	double omega_d = 0.2;						// FREQUENCY OF SQUARE PULSE FOR INITIALIZATION
 	//double coup_d =  0.0;					        // AMPLITUDE OF THE PULSE
@@ -134,7 +134,7 @@ int main(int argc, char** argv) {
 	//1.943*1.0E-7			
 
 
-	//********************************************************************************************* PARAMETERS FOR OUTPUT POINTS *****************************************************
+	//************************************************************************** PARAMETERS FOR OUTPUT POINTS ***********************
 
 	// double N_a[num_ens],omega_a[num_ens],gamma_a[num_ens],\
 			eta_a[num_ens],chi_a[num_ens],coup_a[num_ens],loss_a[num_ens];
@@ -353,7 +353,7 @@ int main(int argc, char** argv) {
 	FILE *Result_time, *Result_Sz, *Result_photon, *Result_coherences_real;
 	
 	// time of simulation
-	//************************************************************************************** OPEN FILE *********************************
+	//************************************************************************** OPEN FILE *****************************************
 		// Warning: handle must not be longer than 60 characters = keep it short
 		// Space is allowed, just enclose with 
 	char fname1[100];
