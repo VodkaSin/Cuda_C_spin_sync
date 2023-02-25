@@ -29,7 +29,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
       if (abort) exit(code);
    }
 }
-
+int loadDoubleData(char* filename, double* out);
 
 /**
 Arguments
@@ -45,21 +45,18 @@ argv[7]		chi_a_0:	float	Atom dephase rate
 argv[8]		kappa_c_0:	float	Cavity decay rate
 argv[9]		t_max:		float	Simulation end time
 argv[10]	t_num:		int		Number of steps
-argv[11]	handle: 	char	File handle to save
-
+argv[11]	handle: 	string	File handle to save
 
 Example run:
-file.exe 1 100 5 0.5 _ 0.5 0.5 20000 1.6
+file.exe 2 100000 1.0 0.0 1.6 0.0 0.0 160.0 2.0 60000 60000
 
 To compile:
 nvcc -w functions.cu main.cu -o file
 
 To compile and run in one line
-cls && nvcc -w functions.cu main.cu -o file && file.exe 5 100 5 0.5 _ 0.5 0.5 20000 1.6
+cls && nvcc -w functions.cu main.cu -o file && file.exe 2 100000 1.0 0.0 1.6 0.0 0.0 160.0 2.0 60000 60000
 
 */
-
-
 int main(int argc, char** argv) {
 
 	// Print input values
@@ -73,6 +70,7 @@ int main(int argc, char** argv) {
 	printf("kappa_c_0 (cavity decay):\t%s\n", argv[8]);
 	printf("t_max:\t\t\t\t%s\n", argv[9]);
 	printf("t_num:\t\t\t\t%s\n", argv[10]);
+	printf("\n");
 
 	//************************************************************************************** INITIAL PARAM *********************************
 	// Ensemble settings
@@ -117,13 +115,31 @@ int main(int argc, char** argv) {
 
 	// double inhomo[num_ens];
 	double* inhomo = new double[num_ens];  // SGK
-	
 
 	// Writing in inhomo[]
 	double maxdetun = 500;
 	double sigma = 0.022;
 	double sqrthalf = 0.707;
 	// Deleted
+
+
+	// Example of how to load detuning data into inhomo_test using `loadDoubleData()`
+	// Define the number of rows and columns; for convenience
+	int detuning_rows = 5;
+	int detuning_cols = 2;
+	// Initialize the array that we want to load the data into (use 1d array)
+	double* inhomo_test = new double[detuning_rows*detuning_cols];
+	// Load detuning data
+	int res = loadDoubleData("Detuning.dat", inhomo_test);
+
+	// Print out loaded data
+	printf("Loaded detuning data:\n");
+	for (int i=0; i<detuning_rows; i++) {
+		for (int j=0; j<detuning_cols; j++) {
+			printf("%f\t", inhomo_test[i*detuning_cols+j]);
+		}
+		printf("\n");
+	}
 
 	//********************************************************************************************* PARAMETERS FOR SQUARE PULSE ********************************************************
 
@@ -516,5 +532,61 @@ int main(int argc, char** argv) {
 	end_clock = clock();
 	// fprintf(stderr,"Program takes about %.2f s\n",(double)(ct1-ct0)/(double)CLOCKS_PER_SEC);
 	printf("Program takes about %.2f s\n",(double)(end_clock - start_clock)/(double)CLOCKS_PER_SEC);
+	return 0;
+}
+
+// Loads 2D matrix data from file (for e.g "Detuning.dat") 
+// and assign it into given `out` 1D double array.
+// 
+// The size of `out` array MUST match the file or bigger.
+// - size of `out` = number_of_rows * number_of_columns
+// - if size of `out` is smaller, out-of-bound errors would occur.
+// 
+// The function expects the file to be in the following format:
+// - Each row is separated by a newline '\n'.
+// - Each column is separated by a tab '\t'.
+// - Each row should not be more than 4096 characters.
+int loadDoubleData(char* filename, double* out) {
+
+	// File pointer to data file
+	FILE* fp;
+
+	// Open file 
+	fp = fopen(filename, "r");
+	if (fp == NULL) {
+		printf("[loadDoubleData] Error: File (%s) does not exists\n", filename);
+		// Return with error (1: file not found)
+		return 1;
+	}
+
+    const char col_delim[] = "\t"; 	// Column delimiter
+	char row[4096];		// This will store each fget attempt, might not be the entire line if the line exceeds buffer size
+	char* col;			// This will store each tab-delimited value in the line
+	int idx = 0;		// Keeps count of how many rows*columns we've parsed
+
+	printf("[loadDoubleData] Reading data file: %s\n", filename);
+	while (fgets(row, sizeof(row), fp)) {
+		// TODO: check if the line read is complete (ends with newline)
+
+		// Remove trailing newline
+		row[strcspn(row, "\n")] = 0;
+
+		// Split line by delimiter (tab)
+		col = strtok(row, col_delim);
+		while(col != NULL) {
+			// Convert string to double value
+			double val = strtod(col, NULL);
+
+			// Add value to the out array
+			out[idx++] = val;
+			
+			// Continue tokenizing the rest of the string
+			col = strtok(NULL, col_delim);
+		}
+	}
+	// Close file
+	fclose(fp);
+	
+	// No error
 	return 0;
 }
