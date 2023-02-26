@@ -29,7 +29,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
       if (abort) exit(code);
    }
 }
-int loadDoubleData(char* filename, double* out);
+int loadDoubleData(char* filename, double* out, int out_size);
 
 /**
 Arguments
@@ -48,16 +48,13 @@ argv[10]	t_num:		int		Number of steps
 argv[11]	handle: 	string	File handle to save
 
 Example run:
-file_alloc.exe 2 100000 1.0 0.0 1.6 0.0 0.0 160.0 2.0 60000 60000
+file.exe 2 100000 1.0 0.0 1.6 0.0 0.0 160.0 2.0 60000 60000
 
 To compile:
-nvcc -w functions.cu main.cu -o file_alloc
+nvcc -w functions.cu main.cu -o file
 
 To compile and run in one line
-cls && nvcc -w functions.cu main_malloc.cu -o file_alloc && file_alloc.exe 2 100000 1.0 0.0 1.6 0.0 0.0 160.0 2.0 60000 60000
-
-To run both file and file_alloc in one line
-file.exe 128 100000 1.0  0.0 1.6 0.0 0.0 160.0 0.5 60000 ens_128 && file_alloc.exe 128 100000 1.0  0.0 1.6 0.0 0.0 160.0 0.5 60000 ens_128_alloc
+cls && nvcc -w functions.cu main.cu -o file && file.exe 2 100000 1.0 0.0 1.6 0.0 0.0 160.0 2.0 60000 60000
 
 */
 int main(int argc, char** argv) {
@@ -126,24 +123,6 @@ int main(int argc, char** argv) {
 	// Deleted
 
 
-	// Example of how to load detuning data into inhomo_test using `loadDoubleData()`
-	// Define the number of rows and columns; for convenience
-	int detuning_rows = 5;
-	int detuning_cols = 2;
-	// Initialize the array that we want to load the data into (use 1d array)
-	double* inhomo_test = (double*)malloc(detuning_rows*detuning_cols*sizeof(double));
-	// Load detuning data
-	int res = loadDoubleData("Detuning.dat", inhomo_test);
-
-	// Print out loaded data
-	printf("Loaded detuning data:\n");
-	for (int i=0; i<detuning_rows; i++) {
-		for (int j=0; j<detuning_cols; j++) {
-			printf("%f\t", inhomo_test[i*detuning_cols+j]);
-		}
-		printf("\n");
-	}
-
 	//********************************************************************************************* PARAMETERS FOR SQUARE PULSE ********************************************************
 
 	double omega_d = 0.2;						// FREQUENCY OF SQUARE PULSE FOR INITIALIZATION
@@ -168,7 +147,7 @@ int main(int argc, char** argv) {
 
 	for (int i =0; i < num_ens; i++){
 		N_a[i] = ens_size;
-		omega_a[i] = 10;
+		// omega_a[i] = 10; // SGK omega_a is loaded from detuning data file instead; see below.
 		gamma_a[i] = gamma_a_0;
 		eta_a[i] = eta_a_0;
 		chi_a[i] = chi_a_0;
@@ -176,6 +155,19 @@ int main(int argc, char** argv) {
 		loss_a[i] = loss_0;
 	}
 
+	// Load detuning data from "Detuning.dat" into `omega_a` array.
+	// Please ensure that Detuning.dat file has the same number of expected values (values_count=num_ens)
+	int res = loadDoubleData("Detuning.dat", omega_a, num_ens);
+	if (res != 0) {
+		printf("Error: failed to load detuning data\n");
+		exit(EXIT_FAILURE);
+	}
+
+	// Print out loaded data
+	printf("Loaded detuning data into omega_a:\n");
+	for (int i=0; i<num_ens; i++) {
+		printf("%f\n", omega_a[i]);
+	}
 
 	// the parameters in an array 
 	// double para_a[7*num_ens];
@@ -540,16 +532,40 @@ int main(int argc, char** argv) {
 
 // Loads 2D matrix data from file (for e.g "Detuning.dat") 
 // and assign it into given `out` 1D double array.
-// 
-// The size of `out` array MUST match the file or bigger.
-// - size of `out` = number_of_rows * number_of_columns
-// - if size of `out` is smaller, out-of-bound errors would occur.
+//
+// Arguments:
+// filename		char*		Name of data file. Can be relative.
+// out			double* 	Pointer to output array that will contain the loaded data.
+// size_out		int			Size of output array. 
+//							The function will only read the same number of values as the given `size_out` number.
+// 							It MUST be the same as the size of the given `out` array. (Or out-of-bounds error may occur).
+//							If the size_out > number of values (rows*cols) in the file, the content of `out` array is not guaranteed.
+//							If the size_out < number of values in the file, extraneous values will be truncated/will not be read.
 // 
 // The function expects the file to be in the following format:
 // - Each row is separated by a newline '\n'.
-// - Each column is separated by a tab '\t'.
 // - Each row should not be more than 4096 characters.
-int loadDoubleData(char* filename, double* out) {
+// - Each column is separated by a tab '\t'. 
+// - A column can have 1 or more tab-separated values.
+// - Empty rows will be skipped.
+//
+// Returns int
+// - 0 if successful
+// - 1 if file not found
+//
+// Example of how to load detuning data into a MxN sized matrix using `loadDoubleData()`
+// int M = 5; // The number of rows
+// int N = 2; // The number of cols
+// double* inhomo_test = new double[M*N]; // Initialize the array that we want to load the data into (use 1d array)
+// loadDoubleData("Detuning_matrix_test.dat", inhomo_test, M*N); // Load detuning data
+// printf("Loaded test detuning data as matrix:\n");
+// for (int i=0; i<M; i++) {
+// 	for (int j=0; j<N; j++) {
+// 		printf("%f\t", inhomo_test[i*N+j]);
+// 	}
+// 	printf("\n");
+// }
+int loadDoubleData(char* filename, double* out, int out_size) {
 
 	// File pointer to data file
 	FILE* fp;
@@ -563,11 +579,11 @@ int loadDoubleData(char* filename, double* out) {
 	}
 
     const char col_delim[] = "\t"; 	// Column delimiter
-	char row[4096];		// This will store each fget attempt, might not be the entire line if the line exceeds buffer size
-	char* col;			// This will store each tab-delimited value in the line
-	int idx = 0;		// Keeps count of how many rows*columns we've parsed
+	char row[4096];					// This will store each fget attempt, might not be the entire line if the line exceeds buffer size
+	char* col;						// This will store each tab-delimited value in the line
+	int idx = 0;					// Keeps count of how many rows*columns we've parsed
 
-	printf("[loadDoubleData] Reading data file: %s\n", filename);
+	// printf("[loadDoubleData] Reading data file: %s\n", filename);
 	while (fgets(row, sizeof(row), fp)) {
 		// TODO: check if the line read is complete (ends with newline)
 
@@ -577,6 +593,10 @@ int loadDoubleData(char* filename, double* out) {
 		// Split line by delimiter (tab)
 		col = strtok(row, col_delim);
 		while(col != NULL) {
+			if (idx >= out_size) {
+				// only read up to `out_size` number of values
+				break;
+			}
 			// Convert string to double value
 			double val = strtod(col, NULL);
 
