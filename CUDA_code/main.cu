@@ -16,6 +16,8 @@
 #include "functions.cuh"
 using namespace std;
 
+#define PBSTR "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
+#define PBWIDTH 60
 #define PI (4.0 * atan(1.0));
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 
@@ -30,6 +32,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
    }
 }
 int loadDoubleData(char* filename, double* out, int out_size);
+void printProgress(int curr, int total);
 
 /**
 Arguments
@@ -164,10 +167,10 @@ int main(int argc, char** argv) {
 	}
 
 	// Print out loaded data
-	printf("Loaded detuning data into omega_a:\n");
-	for (int i=0; i<num_ens; i++) {
-		printf("%f\n", omega_a[i]);
-	}
+	// printf("Loaded detuning data into omega_a:\n");
+	// for (int i=0; i<num_ens; i++) {
+	// 	printf("%f\n", omega_a[i]);
+	// }
 
 	// the parameters in an array 
 	// double para_a[7*num_ens];
@@ -394,9 +397,16 @@ int main(int argc, char** argv) {
 	start_clock = clock();
 	double tc;
 
+	// `force_exit` will be used to abruptly stop the simulation under certain conditions,
+	// for e.g:
+	// - when the calculated `sz` is NaN.
+	bool force_exit = false;
 
 	// update the old reduced density matrix 
 	for (int t = 1; t < t_num; t++){
+		
+		printProgress(t, t_num-1); // t_num-1 because loop would never go to t_num
+		
 		// printf("t %i of t_num %i, tc %1f \n", t, t_num, tc);
 		tc = t*t_step;
 		// printf("tc %1f \n", tc);
@@ -463,6 +473,14 @@ int main(int argc, char** argv) {
 		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 			for (int i = 0; i < num_ens; i++) {
+				// If the returned sz value is NaN, forcefully stop the simulation.
+				if (isnan(sz[i].x)) {
+					fflush(stdout);
+					printf("\nError: sz[i].x is NaN, stopping simulation. (t=%i, i=%i)\n", t, i);
+					force_exit = true;
+					break;
+				}
+				
 				fprintf(Result_Sz,"%e ",sz[i].x);
 				fprintf(Result_coherences_real,"%e ",sm_sp[i].x);
 			}
@@ -471,8 +489,11 @@ int main(int argc, char** argv) {
 			
 		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 		}
+		if (force_exit) {
+			printf("Abruptly stopping simulation...\n");
+			break;
+		}
 	}
-
 
 	// close the files
 	fclose(Result_time);
@@ -526,6 +547,7 @@ int main(int argc, char** argv) {
 
 	end_clock = clock();
 	// fprintf(stderr,"Program takes about %.2f s\n",(double)(ct1-ct0)/(double)CLOCKS_PER_SEC);
+	printf("\n");
 	printf("Program takes about %.2f s\n",(double)(end_clock - start_clock)/(double)CLOCKS_PER_SEC);
 	return 0;
 }
@@ -612,4 +634,16 @@ int loadDoubleData(char* filename, double* out, int out_size) {
 	
 	// No error
 	return 0;
+}
+
+// Print progress bar, given the current progress value and its total progress
+// For e.g for curr=10 and total=100, the bar will show 10%
+// Uses fflush(), \r, and (%.*s, %*s) format specifiers
+void printProgress(int curr, int total) {
+	float percentage = 100.0 * curr / total;
+    int val = (int)percentage;
+    int lpad = (int)(percentage/100 * PBWIDTH);
+    int rpad = PBWIDTH - lpad;
+    printf("\r%d%% [%.*s%*s]", val, lpad, PBSTR, rpad, "");
+    fflush(stdout);
 }
