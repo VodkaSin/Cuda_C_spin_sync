@@ -117,7 +117,7 @@ int main(int argc, char** argv) {
 	char* handle = argv[11];
 
 	// double inhomo[num_ens];
-	double* inhomo = new double[num_ens];  // SGK
+	double* inhomo = (double*)malloc(num_ens*sizeof(double));  // SGK
 
 	// Writing in inhomo[]
 	double maxdetun = 500;
@@ -139,13 +139,13 @@ int main(int argc, char** argv) {
 
 	// double N_a[num_ens],omega_a[num_ens],gamma_a[num_ens],\
 			eta_a[num_ens],chi_a[num_ens],coup_a[num_ens],loss_a[num_ens];
-	double* N_a = new double[num_ens];
-	double* omega_a = new double[num_ens];
-	double* gamma_a = new double[num_ens];
-	double* eta_a = new double[num_ens];
-	double* chi_a = new double[num_ens];
-	double* coup_a = new double[num_ens];
-	double* loss_a = new double[num_ens];
+	double* N_a = (double*)malloc(num_ens*sizeof(double));
+	double* omega_a = (double*)malloc(num_ens*sizeof(double));
+	double* gamma_a = (double*)malloc(num_ens*sizeof(double));
+	double* eta_a = (double*)malloc(num_ens*sizeof(double));
+	double* chi_a = (double*)malloc(num_ens*sizeof(double));
+	double* coup_a = (double*)malloc(num_ens*sizeof(double));
+	double* loss_a = (double*)malloc(num_ens*sizeof(double));
 	// SGK
 
 	for (int i =0; i < num_ens; i++){
@@ -175,7 +175,7 @@ int main(int argc, char** argv) {
 	// the parameters in an array 
 	// double para_a[7*num_ens];
 	// SGK
-	double* para_a = new double[7*num_ens];
+	double* para_a = (double*)malloc(7*num_ens*sizeof(double));
 
 	for  (int i = 0; i < num_ens; i++){
 		para_a[i] = N_a[i];
@@ -198,8 +198,8 @@ int main(int argc, char** argv) {
 
 	// double theta[num_ens],phi[num_ens];
 	// SGK
-	double* theta = new double[num_ens];
-	double* phi = new double[num_ens];
+	double* theta = (double*)malloc(num_ens*sizeof(double));
+	double* phi = (double*)malloc(num_ens*sizeof(double));
 
 	for (int i=0; i < num_ens; i++){
 		theta[i] = theta_0;
@@ -208,8 +208,8 @@ int main(int argc, char** argv) {
 
 	// double2 cu[num_ens],cl[num_ens];
 	// SGK
-	double2* cu = new double2[num_ens];
-	double2* cl = new double2[num_ens];
+	double2* cu = (double2*)malloc(num_ens*sizeof(double2));
+	double2* cl = (double2*)malloc(num_ens*sizeof(double2));
 
 	for (int i=0; i< num_ens; i++){
 		cu[i].x = sin(0.5*theta[i])*cos(phi[i]);
@@ -251,15 +251,15 @@ int main(int argc, char** argv) {
 	// double2 sm_sp[num_ens*num_ens],sm_sz[num_ens*num_ens],\
 		sm_sm[num_ens*num_ens],sz_sz[num_ens*num_ens];
 
-	double2* sz = new double2[num_ens];
-	double2* sm = new double2[num_ens];
-	double2* a_sz = new double2[num_ens];
-	double2* a_sm = new double2[num_ens];
-	double2* a_sp = new double2[num_ens];
-	double2* sm_sp = new double2[num_ens*num_ens];
-	double2* sm_sz = new double2[num_ens*num_ens];
-	double2* sm_sm = new double2[num_ens*num_ens];
-	double2* sz_sz = new double2[num_ens*num_ens];
+	double2* sz = (double2*)malloc(num_ens*sizeof(double2));
+	double2* sm = (double2*)malloc(num_ens*sizeof(double2));
+	double2* a_sz = (double2*)malloc(num_ens*sizeof(double2));
+	double2* a_sm = (double2*)malloc(num_ens*sizeof(double2));
+	double2* a_sp = (double2*)malloc(num_ens*sizeof(double2));
+	double2* sm_sp = (double2*)malloc(num_ens*num_ens*sizeof(double2));
+	double2* sm_sz = (double2*)malloc(num_ens*num_ens*sizeof(double2));
+	double2* sm_sm = (double2*)malloc(num_ens*num_ens*sizeof(double2));
+	double2* sz_sz = (double2*)malloc(num_ens*num_ens*sizeof(double2));
 
 	// for initial values 
 	double2 sm_1,sp_1,sz_1,sm_2,sz_2; 
@@ -522,28 +522,28 @@ int main(int argc, char** argv) {
 	cudaFree(d_sm_sp_dev); cudaFree(d_sm_sz_dev);
 	cudaFree(d_sm_sm_dev); cudaFree(d_sz_sz_dev);
 
-	delete[] inhomo;
-	delete[] N_a;
-	delete[] omega_a;
-	delete[] gamma_a;
-	delete[] eta_a;
-	delete[] chi_a;
-	delete[] coup_a;
-	delete[] loss_a;
-	delete[] para_a;
-	delete[] theta;
-	delete[] phi;
-	delete[] cu;
-	delete[] cl;
-	delete[] sz;
-	delete[] sm;
-	delete[] a_sz;
-	delete[] a_sm;
-	delete[] a_sp;
-	delete[] sm_sp;
-	delete[] sm_sz;
-	delete[] sm_sm;
-	delete[] sz_sz;
+	free(inhomo);
+	free(N_a);
+	free(omega_a);
+	free(gamma_a);
+	free(eta_a);
+	free(chi_a);
+	free(coup_a);
+	free(loss_a);
+	free(para_a);
+	free(theta);
+	free(phi);
+	free(cu);
+	free(cl);
+	free(sz);
+	free(sm);
+	free(a_sz);
+	free(a_sm);
+	free(a_sp);
+	free(sm_sp);
+	free(sm_sz);
+	free(sm_sm);
+	free(sz_sz);
 
 	end_clock = clock();
 	// fprintf(stderr,"Program takes about %.2f s\n",(double)(ct1-ct0)/(double)CLOCKS_PER_SEC);
