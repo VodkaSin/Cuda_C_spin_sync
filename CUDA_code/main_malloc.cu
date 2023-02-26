@@ -1,16 +1,26 @@
 #include <math.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <cuda.h>
 #include <ctime>
 #include <iostream>
-using namespace std;
 #include <curand_kernel.h>
 #include <curand.h>
+
+#ifdef __unix__
+#include <unistd.h>
+#elif defined(_WIN32)|| defined(WIN32) 
+#include <stdint.h>
+#endif
+
 #include "functions.cuh"
+using namespace std;
+
 #define PI (4.0 * atan(1.0));
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+
+// Wrapper for if anything goes wrong with GPU
+// e.g. gpuAssert(cudaMalloc((void**)&para_a_dev,6*num_ens*sizeof(double)));
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
 {
    if (code != cudaSuccess) 
@@ -19,612 +29,567 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
       if (abort) exit(code);
    }
 }
-
-// print_double_arr Helper function to print double arr 
-void print_double_arr(string name, double* arr, int size) {
-	for (int i=0; i<size; i++){
-    printf("%s[%i]=%f\n", name, i, arr[i]);
-  }
-  printf("\n");
-}
-
-// print_double2_arr Helper function to print double2 arr 
-void print_double2_arr(string name, double2* arr, int size) {
-	for (int i=0; i<size; i++){
-    printf("%s[%i]=(%f,%f)\n", name, i, arr[i].x, arr[i].y);
-  }
-  printf("\n");
-}
-
+int loadDoubleData(char* filename, double* out);
 
 /**
 Arguments
 POSITION	VARNAME		TYPE	NOTES
 ---------------------------------------------
-argv[1]		num_ens: 	int		number of classes
-argv[2]		N_total: 	int		number of spins
-argv[3]		delta: 		float	?
-argv[4]		delta1: 	float	phi_0 = delta1*PI; Coefficient of phase
-argv[5]		(unused):	string	? (not in used, just put in any string, for e.g "_")
-argv[6]		theta_0:	float	argv[6)*PI;  INTIAL STATE...... 1 FOR EXCITED STATE AND 0.5 FOR EQUAL SUPERPOSITION
-argv[7]		t_max:		float	T_END
-argv[8]		t_num:		int		NUMBER OF STEPS, (Must be >=20000)
-argv[9]		coup_a_0:	float	ATOM CAVITY COUPLING
+argv[1]		num_ens: 	int		Number of classes
+argv[2]		N_total: 	int		Total number of spins
+argv[3]		theta_0: 	float	Coefficient of PI
+argv[4]		phi_0: 		float	Coefficient of PI
+argv[5]		coup_a_0:	float	Cavity-atom coupling strength
+argv[6]		gamma_a_0:	float	Atom decay rate
+argv[7]		chi_a_0:	float	Atom dephase rate
+argv[8]		kappa_c_0:	float	Cavity decay rate
+argv[9]		t_max:		float	Simulation end time
+argv[10]	t_num:		int		Number of steps
+argv[11]	handle: 	string	File handle to save
 
 Example run:
-file.exe 1 100 5 0.5 _ 0.5 0.5 20000 1.6
+file_alloc.exe 2 100000 1.0 0.0 1.6 0.0 0.0 160.0 2.0 60000 60000
 
 To compile:
-nvcc -w functions.cu main.cu -o file
+nvcc -w functions.cu main.cu -o file_alloc
 
 To compile and run in one line
-cls && nvcc -w functions.cu main.cu -o file && file.exe 5 100 5 0.5 _ 0.5 0.5 20000 1.6
+cls && nvcc -w functions.cu main_malloc.cu -o file_alloc && file_alloc.exe 2 100000 1.0 0.0 1.6 0.0 0.0 160.0 2.0 60000 60000
+
+To run both file and file_alloc in one line
+file.exe 128 100000 1.0  0.0 1.6 0.0 0.0 160.0 0.5 60000 ens_128 && file_alloc.exe 128 100000 1.0  0.0 1.6 0.0 0.0 160.0 0.5 60000 ens_128_alloc
 
 */
 int main(int argc, char** argv) {
 
-printf("num_ens:\t%s\n", argv[1]);
-printf("N_total:\t%s\n", argv[2]);
-printf("delta:\t\t%s\n", argv[3]);
-printf("delta1:\t\t%s\n", argv[4]);
-printf("(unused):\t%s\n", argv[5]);
-printf("theta_0:\t%s\n", argv[6]);
-printf("t_max:\t\t%s\n", argv[7]);
-printf("t_num:\t\t%s\n", argv[8]);
-printf("coup_a_0:\t%s\n", argv[9]);
+	// Print input values
+	printf("num_ens:\t\t\t%s\n", argv[1]);
+	printf("N_total:\t\t\t%s\n", argv[2]);
+	printf("theta_0:\t\t\t%s\n", argv[3]);
+	printf("phi_0:\t\t\t\t%s\n", argv[4]);
+	printf("coup_a_0:\t\t\t%s\n", argv[5]);
+	printf("gamma_a_0 (atom decay):\t\t%s\n", argv[6]);
+	printf("chi_a_0 (atom dephase):\t\t%s\n", argv[7]);
+	printf("kappa_c_0 (cavity decay):\t%s\n", argv[8]);
+	printf("t_max:\t\t\t\t%s\n", argv[9]);
+	printf("t_num:\t\t\t\t%s\n", argv[10]);
+	printf("\n");
 
-int num_ens = atoi(argv[1]); // number of classes
-int p=50; // need this for symmetric freq dist // num_ens=2p+1
-int N_total = atoi(argv[2]); // number of spins
+	//************************************************************************************** INITIAL PARAM *********************************
+	// Ensemble settings
+	int num_ens = atoi(argv[1]); 	// Number of classes
+	int N_total = atoi(argv[2]); 	// Number of spins
+	int ens_size = N_total/num_ens; // Number of spins in each class (uniform distribution)
 
-clock_t ct0,ct1, ct3;
-ct0 = clock();
-// double axe[p+1];
-double* axe = (double*)malloc((p+1)*sizeof(double));  // SGK
-int ens_size = N_total/num_ens;
-double phi_0 = atof(argv[4])*PI;
-// double inhomo[num_ens];
-double* inhomo = (double*)malloc(num_ens*sizeof(double)); // SGK
+	// Initial state
+		// sin(theta_0/2)|e> + cos(theta_0/2)exp(i*phi_0)|g>
+		// theta_0 = PI fully excited, theta_0 = 0 fully grounded
+	double theta_0 = atof(argv[3])*PI;
+	double phi_0 = atof(argv[4])*PI; 
 
-double b= 0.999999;
-double aa= 0.0000000001;
-int n= p+1;
-double c = (b - aa)/(n - 1);
-for(int i = 0; i < n; ++i){
-axe[i] =  aa + i*c;
-//printf("%f \n",axe[i]);
-}
-axe[n - 1] = b;
+	// System settings
+		// Unit in kHz * 2pi
+	double coup_a_0 =  atof(argv[5]); 	// Atom-cavity coupling
+	double gamma_a_0 = atof(argv[6]); 	// Atom decay rate: [lower_a]
+	double chi_a_0 =   atof(argv[7]); 	// Atom dephase rate: [sz]
+	// SM Not taking effect yet
+	double kappa_c_0 = atof(argv[8]); 	// Cavity decay rate: [a]
+	double loss_0 =    0.0;				// Atom loss (population decreases rate)
+	double omega_c =   0.0; 			// Cavity detuning
+	double kappa_1_c = 1.0*100.0;		// LEFT MIRROR DECAY
+	double kappa_2_c = 1.0*100.0;		// RIGHT MIRROR DECAY
+	double eta_a_0 =   0.0;				// ATOM PUMPING
 
-
-double maxdetun = 500;
-double sigma = 0.022;
-double sqrthalf = 0.707;
-
-
-
-// Normal distribution
-// Writing detuning values in a file 
-FILE *Detuning;
-Detuning = fopen("Detuning.dat","w");
-
-if(num_ens==1){
-	double freq = 0;
-inhomo[0] = freq; //always start at zero detuning
-fprintf(Detuning,"%e \n",inhomo[0]);
-fclose(Detuning);
-}
-
-//if(num_ens>1){
-//	for (int i=1; i<p+1; i++){
-//		double x= axe[i];
-//		double tt1, tt2, lnx, sgn;
-//		sgn = (x < 0) ? -1.0f : 1.0f;
-//		x = (1 - x)*(1 + x);    
-//		lnx = log(x);
-//		tt1 = (2/(3.1416*0.147) + 0.5f * lnx);
-//		tt2 = 1/(0.147) * lnx;
-//		//inhomo[p+i] =  sgn*sqrt(-tt1 + sqrtf(tt1*tt1 - tt2))*maxdetun/3.1416;
-//		//inhomo[p-i] = -sgn*sqrt(-tt1 + sqrtf(tt1*tt1 - tt2))*maxdetun/3.1416; 
-//		inhomo[i-1] = ((0.5 * erfc(-axe[i] * sqrthalf/ sigma) - 0.5)*2-1)*maxdetun;
-//		inhomo[2*p+1-i] = -((0.5 * erfc(-axe[i] * sqrthalf/ sigma) - 0.5)*2-1)*maxdetun;
-//		//printf("%1f\n", inhomo[i+1]);
-//	}
-//	inhomo[p]=0;
-//	for(int i=0;i<num_ens;i++){
-//		fprintf(Detuning,"%e \n",inhomo[i]);
-//	}
-//	fclose(Detuning);
-//}
-if(num_ens==5){
-double delta = atof(argv[3]);
-double delta1 = atof(argv[4]);
-int i0 = 0; int i1 = 1; int i2=2; int i3=3; int i4=4;
-inhomo[i0]= -delta1;
-fprintf(Detuning,"%e \n",inhomo[0]);
-inhomo[i1]= -delta;
-fprintf(Detuning,"%e \n",inhomo[1]);
-inhomo[i2]= delta-delta;
-fprintf(Detuning,"%e \n",inhomo[2]);
-inhomo[i3]= delta;
-fprintf(Detuning,"%e \n",inhomo[3]);
-inhomo[i4]= delta1;
-fprintf(Detuning,"%e \n",inhomo[4]);
-fclose(Detuning);
-}
-
-if(num_ens==3){
-double delta = atof(argv[3]);
-int i0 = 0; int i1 = 1; int i2=2;
-inhomo[i0]= -delta;
-fprintf(Detuning,"%e \n",inhomo[0]);
-inhomo[i1]= delta-delta;
-fprintf(Detuning,"%e \n",inhomo[1]);
-inhomo[i2]= delta;
-fprintf(Detuning,"%e \n",inhomo[2]);
-fclose(Detuning);
-}
-
-if(num_ens==2){
-double delta = atof(argv[3]);
-int i0 = 0; int i1 = 1;
-inhomo[i0]= -delta;
-fprintf(Detuning,"%e \n",inhomo[0]);
-inhomo[i1]= delta-delta;
-fprintf(Detuning,"%e \n",inhomo[1]);
-fclose(Detuning);
-}
-
-print_double_arr("inhomo", inhomo, num_ens);
-
-//********************************************************************************************* PARAMETERS AND DEFINITIONS ********************************************************
-// Unit in kHz * 2pi
-double gamma_a_0 = 0.0*2.0;				// ATOM DECAY
-double eta_a_0 =   0.0;						// ATOM PUMPING
-double chi_a_0 =   0.0;						// ATOM DEPHASING
-double coup_a_0 =  atof(argv[9]);					// ATOM CAVITY COUPLING
-double loss_0 =    0.0;						// ATOM LOSS
-double kappa_1_c = 1.0*100.0;				// LEFT MIRROR DECAY
-double kappa_2_c = 1.0*100.0;				// RIGHT MIRROR DECAY
-
-double theta_0 = atof(argv[6])*PI; 						// INTIAL STATE...... PI FOR EXCITED STATE AND (PI*0.5) FOR EQUAL SUPERPOSITION
-double zero_phonon= 0.0;					// ZERO PHONON LINE
-double omega_c = zero_phonon;					// CAVITY FREQUENCY AT RESONANCE
-
-
-
-
-//********************************************************************************************* PARAMETERS FOR SQUARE PULSE ********************************************************
-
-double omega_d = 0.2;						// FREQUENCY OF SQUARE PULSE FOR INITIALIZATION
-//double coup_d =  0.0;					        // AMPLITUDE OF THE PULSE
-double coup_d = 0.0*3;					// AMPLITUDE OF THE PULSE
-double t_stop = 0.0*15; 					// LENGTH OF SQUARE PULSE in us
-//1.943*1.0E-7			
-
-//********************************************************************************************* PARAMETERS FOR TIME EVOLUTION *****************************************************
-
-double t_max = atof(argv[7]);					// T_END
-int t_num = atoi(argv[8]);						// NUMBER OF STEPS
-double t_step = t_max/t_num;					// dT (SIZE OF EACH STEP)
-
-
-
-//********************************************************************************************* PARAMETERS FOR OUTPUT POINTS *****************************************************
-
-int t_store_num = 20000;
-int t_store =  t_num/t_store_num;
-
-//***************************************************************************************** INITIALIZATION & PROGRAM BEGINS HERE **************************************************
-
-
-// SGK check that t_num is larger than t_store_num, or it won't complete a run.
-if (t_num < t_store_num) {
-	printf("[invalid param] Specify a 't_num' larger than or equal to %i", t_store_num);
-	return;
-}
-
-// double N_a[num_ens],omega_a[num_ens],gamma_a[num_ens],\
-		eta_a[num_ens],chi_a[num_ens],coup_a[num_ens],loss_a[num_ens];
-double* N_a = (double*)malloc(num_ens*sizeof(double));
-double* omega_a = (double*)malloc(num_ens*sizeof(double));
-double* gamma_a = (double*)malloc(num_ens*sizeof(double));
-double* eta_a = (double*)malloc(num_ens*sizeof(double));
-double* chi_a = (double*)malloc(num_ens*sizeof(double));
-double* coup_a = (double*)malloc(num_ens*sizeof(double));
-double* loss_a = (double*)malloc(num_ens*sizeof(double));
- // SGK
-
-for (int i =0; i < num_ens; i++){
-	N_a[i] = ens_size;
-	omega_a[i] = inhomo[i];
-	gamma_a[i] = gamma_a_0;
-	eta_a[i] = eta_a_0;
-	chi_a[i] = chi_a_0;
-	coup_a[i] = coup_a_0;
-	loss_a[i] = loss_0;
-}
-
-print_double_arr("N_a", N_a, num_ens);
-print_double_arr("omega_a", omega_a, num_ens);
-print_double_arr("gamma_a", gamma_a, num_ens);
-print_double_arr("eta_a", eta_a, num_ens);
-print_double_arr("chi_a", chi_a, num_ens);
-print_double_arr("coup_a", coup_a, num_ens);
-print_double_arr("loss_a", loss_a, num_ens);
-
-
-// the parameters in an array 
-// double para_a[7*num_ens];
-// SGK
-double* para_a = (double*)malloc(7*num_ens*sizeof(double));
-
-for  (int i = 0; i < num_ens; i++){
-	para_a[i] = N_a[i];
-	para_a[i+num_ens] = omega_a[i];
-	para_a[i+2*num_ens] = gamma_a[i];
-	para_a[i+3*num_ens] = eta_a[i];
-	para_a[i+4*num_ens] = chi_a[i];
-	para_a[i+5*num_ens] = coup_a[i];
-	para_a[i+6*num_ens] = loss_a[i];
-}
-
-print_double_arr("para_a", para_a, 7*num_ens);
-
-// copy the parameters into the memory in GPU
-double *para_a_dev;
-gpuErrchk(cudaMalloc((void**)&para_a_dev,6*num_ens*sizeof(double))); 
-gpuErrchk(cudaMemcpy(para_a_dev,para_a,6*num_ens*sizeof(double),cudaMemcpyHostToDevice));
-//******************************
-// parameters for initial states 
-
-
-// double theta[num_ens],phi[num_ens];
-// SGK
-double* theta = (double*)malloc(num_ens*sizeof(double));
-double* phi = (double*)malloc(num_ens*sizeof(double));
-
-for (int i=0; i < num_ens; i++){
-	theta[i] = theta_0;
-	phi[i] = phi_0;
-}
-
-print_double_arr("theta", theta, num_ens);
-print_double_arr("phi", phi, num_ens);
-
-// double2 cu[num_ens],cl[num_ens];
-// SGK
-double2* cu = (double2*)malloc(num_ens*sizeof(double2));
-double2* cl = (double2*)malloc(num_ens*sizeof(double2));
-
-for (int i=0; i< num_ens; i++){
-	cu[i].x = sin(0.5*theta[i])*cos(phi[i]);
-	cu[i].y = sin(0.5*theta[i])*sin(phi[i]);
+	//************************************************************************************** TIME CONSTANTS ********************************
+	double t_max = atof(argv[9]);					// T_END
+	int t_num = atoi(argv[10]);						// NUMBER OF STEPS
+	double t_step = t_max/t_num;					// dT (SIZE OF EACH STEP)
+	int t_store_num = 20000;
+	int t_store =  t_num/t_store_num;
 	
-	cl[i].x = cos(0.5*theta[i]); 
-	cl[i].y = 0.; 
-}
-
-print_double2_arr("cu", cu, num_ens);
-print_double2_arr("cl", cl, num_ens);
-
-double para_c[9];
-para_c[0] = omega_c;
-para_c[1] = kappa_1_c;
-para_c[2] = kappa_2_c;
-
-para_c[3] = omega_d;
-para_c[4] = coup_d;
-para_c[5] = t_stop;
-
-
-
-double *para_c_dev;
-cudaMalloc((void**)&para_c_dev,9*sizeof(double));
-cudaMemcpy(para_c_dev,para_c,9*sizeof(double),cudaMemcpyHostToDevice);
-
-
-double *t_step_dev;
-cudaMalloc((void**)&t_step_dev,sizeof(double));
-cudaMemcpy(t_step_dev,&t_step,sizeof(double),cudaMemcpyHostToDevice);
-
-
-
-
-
-
-
-// on CPU side 
-double2 ap_a,a,a_a;
-// double2 sz[num_ens],sm[num_ens],a_sz[num_ens],a_sm[num_ens],a_sp[num_ens];
-// double2 sm_sp[num_ens*num_ens],sm_sz[num_ens*num_ens],\
-	sm_sm[num_ens*num_ens],sz_sz[num_ens*num_ens];
-
-double2* sz = (double2*)malloc(num_ens*sizeof(double2));
-double2* sm = (double2*)malloc(num_ens*sizeof(double2));
-double2* a_sz = (double2*)malloc(num_ens*sizeof(double2));
-double2* a_sm = (double2*)malloc(num_ens*sizeof(double2));
-double2* a_sp = (double2*)malloc(num_ens*sizeof(double2));
-double2* sm_sp = (double2*)malloc(num_ens*num_ens*sizeof(double2));
-double2* sm_sz = (double2*)malloc(num_ens*num_ens*sizeof(double2));
-double2* sm_sm = (double2*)malloc(num_ens*num_ens*sizeof(double2));
-double2* sz_sz = (double2*)malloc(num_ens*num_ens*sizeof(double2));
-
-// for initial values 
-double2 sm_1,sp_1,sz_1,sm_2,sz_2; 
-
-//****************************
-// initialize the observables
-ap_a.x = 0.; ap_a.y = 0.; a.x = 0.; a.y = 0.; a_a.x =0.; a_a.y = 0.; 
-
-for (int i= 0; i < num_ens; i++){
-	sz_1.x = (cu[i].x*cu[i].x + cu[i].y*cu[i].y) - (cl[i].x*cl[i].x + cl[i].y*cl[i].y); 
-	sz_1.y = 0.; 
-	sm_1.x = cu[i].x*cl[i].x + cu[i].y*cl[i].y;
-	sm_1.y = -cu[i].x*cl[i].y + cu[i].y*cl[i].x; 
-	sp_1.x = cu[i].x*cl[i].x + cu[i].y*cl[i].y;
-	sp_1.y = cu[i].x*cl[i].y - cu[i].y*cl[i].x;
-	
-	sz[i].x = sz_1.x; sz[i].y = sz_1.y;
-	sm[i].x = sm_1.x; sm[i].y = sm_1.y; 
-	
-	a_sp[i].x = 0.; a_sp[i].y = 0.;
-	a_sz[i].x = 0.; a_sz[i].y = 0.;
-	a_sm[i].x = 0.; a_sm[i].y = 0.; 
-	
-	for (int j = 0; j < num_ens; j++){
-		sz_2.x = (cu[j].x*cu[j].x + cu[j].y*cu[j].y) - (cl[j].x*cl[j].x + cl[j].y*cl[j].y); 
-		sz_2.y = 0.; 
-		sm_2.x = cu[j].x*cl[j].x + cu[j].y*cl[j].y;
-		sm_2.y = -cu[j].x*cl[j].y + cu[j].y*cl[j].x; 
-		
-		sm_sp[j + i*num_ens].x = sm_2.x*sp_1.x - sm_2.y*sp_1.y; 
-		sm_sp[j + i*num_ens].y = sm_2.x*sp_1.y + sm_2.y*sp_1.x; 
-		
-		sm_sz[j + i*num_ens].x = sm_2.x*sz_1.x - sm_2.y*sz_1.y;
-		sm_sz[j + i*num_ens].y = sm_2.x*sz_1.y + sm_2.y*sz_1.x;
-		
-		sm_sm[j + i*num_ens].x = sm_2.x*sm_1.x - sm_2.y*sm_1.y;
-		sm_sm[j + i*num_ens].y = sm_2.x*sm_1.y + sm_2.y*sm_1.x;
-				
-		sz_sz[j + i*num_ens].x = sz_2.x*sz_1.x - sz_2.y*sz_1.y;
-		sz_sz[j + i*num_ens].y = sz_2.x*sz_1.y + sz_2.y*sz_1.x;	
+	// SGK check that t_num is larger than t_store_num, or it won't complete a run.
+	if (t_num < t_store_num) {
+		printf("[invalid param] Specify a 't_num' larger than or equal to %i", t_store_num);
+		return;
 	}
-}
 
-print_double2_arr("sz", sz, num_ens);
-print_double2_arr("sm", sm, num_ens);
-print_double2_arr("a_sz", a_sz, num_ens);
-print_double2_arr("a_sm", a_sm, num_ens);
-print_double2_arr("a_sp", a_sp, num_ens);
-print_double2_arr("sm_sp", sm_sp, num_ens*num_ens);
-print_double2_arr("sm_sz", sm_sz, num_ens*num_ens);
-print_double2_arr("sm_sm", sm_sm, num_ens*num_ens);
-print_double2_arr("sz_sz", sz_sz, num_ens*num_ens);
+	// File handle
+	char* handle = argv[11];
 
-// on GUP side 
-double2 *ap_a_dev,*a_dev,*a_a_dev;
-double2 *sz_dev,*sm_dev,*a_sz_dev,*a_sm_dev,*a_sp_dev;
-double2 *sm_sp_dev,*sm_sz_dev,*sm_sm_dev,*sz_sz_dev;
+	// double inhomo[num_ens];
+	double* inhomo = (double*)malloc(num_ens*sizeof(double));  // SGK
 
-// create observables on GPU side 
-cudaMalloc((void**)&ap_a_dev,sizeof(double2));
-cudaMalloc((void**)&a_dev,sizeof(double2));
-cudaMalloc((void**)&a_a_dev,sizeof(double2));
-
-cudaMalloc((void**)&sz_dev,num_ens*sizeof(double2));
-cudaMalloc((void**)&sm_dev,num_ens*sizeof(double2));
-cudaMalloc((void**)&a_sz_dev,num_ens*sizeof(double2));
-cudaMalloc((void**)&a_sm_dev,num_ens*sizeof(double2));
-cudaMalloc((void**)&a_sp_dev,num_ens*sizeof(double2));
-
-cudaMalloc((void**)&sm_sp_dev,num_ens*num_ens*sizeof(double2));
-cudaMalloc((void**)&sm_sz_dev,num_ens*num_ens*sizeof(double2));
-cudaMalloc((void**)&sm_sm_dev,num_ens*num_ens*sizeof(double2));
-cudaMalloc((void**)&sz_sz_dev,num_ens*num_ens*sizeof(double2));
+	// Writing in inhomo[]
+	double maxdetun = 500;
+	double sigma = 0.022;
+	double sqrthalf = 0.707;
+	// Deleted
 
 
+	// Example of how to load detuning data into inhomo_test using `loadDoubleData()`
+	// Define the number of rows and columns; for convenience
+	int detuning_rows = 5;
+	int detuning_cols = 2;
+	// Initialize the array that we want to load the data into (use 1d array)
+	double* inhomo_test = (double*)malloc(detuning_rows*detuning_cols*sizeof(double));
+	// Load detuning data
+	int res = loadDoubleData("Detuning.dat", inhomo_test);
 
-// copy observables on GPU side 
-cudaMemcpy(ap_a_dev,&ap_a,sizeof(double2),cudaMemcpyHostToDevice);
-cudaMemcpy(a_dev,&a,sizeof(double2),cudaMemcpyHostToDevice);
-cudaMemcpy(a_a_dev,&a_a,sizeof(double2),cudaMemcpyHostToDevice);
+	// Print out loaded data
+	printf("Loaded detuning data:\n");
+	for (int i=0; i<detuning_rows; i++) {
+		for (int j=0; j<detuning_cols; j++) {
+			printf("%f\t", inhomo_test[i*detuning_cols+j]);
+		}
+		printf("\n");
+	}
 
-cudaMemcpy(sz_dev,sz,num_ens*sizeof(double2),cudaMemcpyHostToDevice);
-cudaMemcpy(sm_dev,sm,num_ens*sizeof(double2),cudaMemcpyHostToDevice);
-cudaMemcpy(a_sz_dev,a_sz,num_ens*sizeof(double2),cudaMemcpyHostToDevice);
-cudaMemcpy(a_sm_dev,a_sm,num_ens*sizeof(double2),cudaMemcpyHostToDevice);
-cudaMemcpy(a_sp_dev,a_sp,num_ens*sizeof(double2),cudaMemcpyHostToDevice);
+	//********************************************************************************************* PARAMETERS FOR SQUARE PULSE ********************************************************
 
-cudaMemcpy(sm_sp_dev,sm_sp,num_ens*num_ens*sizeof(double2),cudaMemcpyHostToDevice);
-cudaMemcpy(sm_sz_dev,sm_sz,num_ens*num_ens*sizeof(double2),cudaMemcpyHostToDevice);
-cudaMemcpy(sm_sm_dev,sm_sm,num_ens*num_ens*sizeof(double2),cudaMemcpyHostToDevice);
-cudaMemcpy(sz_sz_dev,sz_sz,num_ens*num_ens*sizeof(double2),cudaMemcpyHostToDevice);
-
-//***************
-// derivatives 
-double2 *d_ap_a_dev,*d_a_dev,*d_a_a_dev;
-double2 *d_sz_dev,*d_sm_dev,*d_a_sz_dev,*d_a_sm_dev,*d_a_sp_dev;
-double2 *d_sm_sp_dev,*d_sm_sz_dev,*d_sm_sm_dev,*d_sz_sz_dev;
-
-// create observables on GPU side 
-cudaMalloc((void**)&d_ap_a_dev,sizeof(double2));
-cudaMalloc((void**)&d_a_dev,sizeof(double2));
-cudaMalloc((void**)&d_a_a_dev,sizeof(double2));
-
-cudaMalloc((void**)&d_sz_dev,num_ens*sizeof(double2));
-cudaMalloc((void**)&d_sm_dev,num_ens*sizeof(double2));
-cudaMalloc((void**)&d_a_sz_dev,num_ens*sizeof(double2));
-cudaMalloc((void**)&d_a_sm_dev,num_ens*sizeof(double2));
-cudaMalloc((void**)&d_a_sp_dev,num_ens*sizeof(double2));
-
-cudaMalloc((void**)&d_sm_sp_dev,num_ens*num_ens*sizeof(double2));
-cudaMalloc((void**)&d_sm_sz_dev,num_ens*num_ens*sizeof(double2));
-cudaMalloc((void**)&d_sm_sm_dev,num_ens*num_ens*sizeof(double2));
-cudaMalloc((void**)&d_sz_sz_dev,num_ens*num_ens*sizeof(double2));
-
-FILE *Result_time,*Result_Sz,*Result_Sm,*Result_photon,*Result_field, *coherences_real, *coherences_imag;
-// time of simulation
-Result_time = fopen("Result_time.dat","w");
-Result_Sz = fopen("Result_Sz.dat","w");
-Result_photon = fopen("Result_photon.dat","w");
-Result_field = fopen("Result_field.dat","w");
-Result_Sm = fopen("Result_Sm.dat","w");
-coherences_real = fopen("coherences_real.dat","w");
+	double omega_d = 0.2;						// FREQUENCY OF SQUARE PULSE FOR INITIALIZATION
+	//double coup_d =  0.0;					        // AMPLITUDE OF THE PULSE
+	double coup_d = 0.0*3;					// AMPLITUDE OF THE PULSE
+	double t_stop = 0.0*15; 					// LENGTH OF SQUARE PULSE in us
+	//1.943*1.0E-7			
 
 
+	//********************************************************************************************* PARAMETERS FOR OUTPUT POINTS *****************************************************
+
+	// double N_a[num_ens],omega_a[num_ens],gamma_a[num_ens],\
+			eta_a[num_ens],chi_a[num_ens],coup_a[num_ens],loss_a[num_ens];
+	double* N_a = (double*)malloc(num_ens*sizeof(double));
+	double* omega_a = (double*)malloc(num_ens*sizeof(double));
+	double* gamma_a = (double*)malloc(num_ens*sizeof(double));
+	double* eta_a = (double*)malloc(num_ens*sizeof(double));
+	double* chi_a = (double*)malloc(num_ens*sizeof(double));
+	double* coup_a = (double*)malloc(num_ens*sizeof(double));
+	double* loss_a = (double*)malloc(num_ens*sizeof(double));
+	// SGK
+
+	for (int i =0; i < num_ens; i++){
+		N_a[i] = ens_size;
+		omega_a[i] = 10;
+		gamma_a[i] = gamma_a_0;
+		eta_a[i] = eta_a_0;
+		chi_a[i] = chi_a_0;
+		coup_a[i] = coup_a_0;
+		loss_a[i] = loss_0;
+	}
 
 
-ct3 = clock(); // start timing when simulation starts
+	// the parameters in an array 
+	// double para_a[7*num_ens];
+	// SGK
+	double* para_a = (double*)malloc(7*num_ens*sizeof(double));
+
+	for  (int i = 0; i < num_ens; i++){
+		para_a[i] = N_a[i];
+		para_a[i+num_ens] = omega_a[i];
+		para_a[i+2*num_ens] = gamma_a[i];
+		para_a[i+3*num_ens] = eta_a[i];
+		para_a[i+4*num_ens] = chi_a[i];
+		para_a[i+5*num_ens] = coup_a[i];
+		para_a[i+6*num_ens] = loss_a[i];
+	}
+
+	// copy the parameters into the memory in GPU
+	double *para_a_dev;
+	cudaMalloc((void**)&para_a_dev,6*num_ens*sizeof(double)); 
+	cudaMemcpy(para_a_dev,para_a,6*num_ens*sizeof(double),cudaMemcpyHostToDevice);
+
+	//*******************************
+	// parameters for initial states 
+
+
+	// double theta[num_ens],phi[num_ens];
+	// SGK
+	double* theta = (double*)malloc(num_ens*sizeof(double));
+	double* phi = (double*)malloc(num_ens*sizeof(double));
+
+	for (int i=0; i < num_ens; i++){
+		theta[i] = theta_0;
+		phi[i] = phi_0;
+	}
+
+	// double2 cu[num_ens],cl[num_ens];
+	// SGK
+	double2* cu = (double2*)malloc(num_ens*sizeof(double2));
+	double2* cl = (double2*)malloc(num_ens*sizeof(double2));
+
+	for (int i=0; i< num_ens; i++){
+		cu[i].x = sin(0.5*theta[i])*cos(phi[i]);
+		cu[i].y = sin(0.5*theta[i])*sin(phi[i]);
+		
+		cl[i].x = cos(0.5*theta[i]); 
+		cl[i].y = 0.; 
+	}
+
+	double para_c[9];
+	para_c[0] = omega_c;
+	para_c[1] = kappa_1_c;
+	para_c[2] = kappa_2_c;
+
+	para_c[3] = omega_d;
+	para_c[4] = coup_d;
+	para_c[5] = t_stop;
 
 
 
-// ***********************************
-// simulations starts
-// ***********************************
-double tc;
+	double *para_c_dev;
+	cudaMalloc((void**)&para_c_dev,9*sizeof(double));
+	cudaMemcpy(para_c_dev,para_c,9*sizeof(double),cudaMemcpyHostToDevice);
 
 
-// update the old reduced density matrix 
-for (int t = 1; t < t_num; t++){
-
-	// printf("t %i of t_num %i, tc %1f \n", t, t_num, tc);
-	tc = t*t_step;
-	// printf("tc %1f \n", tc);
-
-//************************************
-// calculate derivatives 
-
-// calculate the photon observables
-// ap_a, a, a_a 
-	calculate_photons<<<1,1>>>(tc,num_ens,para_a_dev,para_c_dev,\
-				ap_a_dev,a_dev,a_a_dev,\
-				a_sp_dev,sm_dev,a_sm_dev,\
-				d_ap_a_dev,d_a_dev,d_a_a_dev);
-	cudaThreadSynchronize();
-
-// calculate the atomic observables and atom-photon correlations
-// sz, sm, a_sz, a_sm, a_sp 
-	calculate_atoms<<<1,num_ens>>>(tc,num_ens,para_a_dev,para_c_dev,\
-					sz_dev,sm_dev,a_sz_dev,a_sm_dev,a_sp_dev,\
-					sm_sp_dev,sm_sm_dev,sm_sz_dev,a_dev,ap_a_dev,a_a_dev,\
-					d_sz_dev,d_sm_dev,d_a_sz_dev,d_a_sm_dev,d_a_sp_dev);
-	cudaThreadSynchronize();
-
-// calculate the atom-atom correlations 
-// sm_sp, sm_sz, sm_sm, sz_sz
-	calculate_correlations<<<num_ens,num_ens>>>(num_ens,t_step,para_a_dev,para_c_dev,\
-						sm_sp_dev,sm_sz_dev,sm_sm_dev,sz_sz_dev,\
-						a_dev,a_sm_dev,a_sp_dev,a_sz_dev,sm_dev,sz_dev,\
-						d_sm_sp_dev,d_sm_sz_dev,d_sm_sm_dev,d_sz_sz_dev);
-	cudaThreadSynchronize();
-
-//*************************************
-// update observables
-
-	update_photons<<<1,1>>>(t_step,ap_a_dev,a_dev,a_a_dev,\
-				d_ap_a_dev,d_a_dev,d_a_a_dev);
-	cudaThreadSynchronize();
+	double *t_step_dev;
+	cudaMalloc((void**)&t_step_dev,sizeof(double));
+	cudaMemcpy(t_step_dev,&t_step,sizeof(double),cudaMemcpyHostToDevice);
 
 
-	update_atoms<<<1,num_ens>>>(num_ens,t_step,para_a_dev,sz_dev,sm_dev,a_sz_dev,a_sm_dev,a_sp_dev,\
-				d_sz_dev,d_sm_dev,d_a_sz_dev,d_a_sm_dev,d_a_sp_dev);
-	cudaThreadSynchronize();
+
+
+
+
+
+	// on CPU side 
+	double2 ap_a,a,a_a;
+	// double2 sz[num_ens],sm[num_ens],a_sz[num_ens],a_sm[num_ens],a_sp[num_ens];
+	// double2 sm_sp[num_ens*num_ens],sm_sz[num_ens*num_ens],\
+		sm_sm[num_ens*num_ens],sz_sz[num_ens*num_ens];
+
+	double2* sz = (double2*)malloc(num_ens*sizeof(double2));
+	double2* sm = (double2*)malloc(num_ens*sizeof(double2));
+	double2* a_sz = (double2*)malloc(num_ens*sizeof(double2));
+	double2* a_sm = (double2*)malloc(num_ens*sizeof(double2));
+	double2* a_sp = (double2*)malloc(num_ens*sizeof(double2));
+	double2* sm_sp = (double2*)malloc(num_ens*num_ens*sizeof(double2));
+	double2* sm_sz = (double2*)malloc(num_ens*num_ens*sizeof(double2));
+	double2* sm_sm = (double2*)malloc(num_ens*num_ens*sizeof(double2));
+	double2* sz_sz = (double2*)malloc(num_ens*num_ens*sizeof(double2));
+
+	// for initial values 
+	double2 sm_1,sp_1,sz_1,sm_2,sz_2; 
+
+	//****************************
+	// initialize the observables
+	ap_a.x = 0.; ap_a.y = 0.; a.x = 0.; a.y = 0.; a_a.x =0.; a_a.y = 0.; 
+
+	for (int i= 0; i < num_ens; i++){
+		sz_1.x = (cu[i].x*cu[i].x + cu[i].y*cu[i].y) - (cl[i].x*cl[i].x + cl[i].y*cl[i].y); 
+		sz_1.y = 0.; 
+		sm_1.x = cu[i].x*cl[i].x + cu[i].y*cl[i].y;
+		sm_1.y = -cu[i].x*cl[i].y + cu[i].y*cl[i].x; 
+		sp_1.x = cu[i].x*cl[i].x + cu[i].y*cl[i].y;
+		sp_1.y = cu[i].x*cl[i].y - cu[i].y*cl[i].x;
+		
+		sz[i].x = sz_1.x; sz[i].y = sz_1.y;
+		sm[i].x = sm_1.x; sm[i].y = sm_1.y; 
+		
+		a_sp[i].x = 0.; a_sp[i].y = 0.;
+		a_sz[i].x = 0.; a_sz[i].y = 0.;
+		a_sm[i].x = 0.; a_sm[i].y = 0.; 
+		
+		for (int j = 0; j < num_ens; j++){
+			sz_2.x = (cu[j].x*cu[j].x + cu[j].y*cu[j].y) - (cl[j].x*cl[j].x + cl[j].y*cl[j].y); 
+			sz_2.y = 0.; 
+			sm_2.x = cu[j].x*cl[j].x + cu[j].y*cl[j].y;
+			sm_2.y = -cu[j].x*cl[j].y + cu[j].y*cl[j].x; 
+			
+			sm_sp[j + i*num_ens].x = sm_2.x*sp_1.x - sm_2.y*sp_1.y; 
+			sm_sp[j + i*num_ens].y = sm_2.x*sp_1.y + sm_2.y*sp_1.x; 
+			
+			sm_sz[j + i*num_ens].x = sm_2.x*sz_1.x - sm_2.y*sz_1.y;
+			sm_sz[j + i*num_ens].y = sm_2.x*sz_1.y + sm_2.y*sz_1.x;
+			
+			sm_sm[j + i*num_ens].x = sm_2.x*sm_1.x - sm_2.y*sm_1.y;
+			sm_sm[j + i*num_ens].y = sm_2.x*sm_1.y + sm_2.y*sm_1.x;
+					
+			sz_sz[j + i*num_ens].x = sz_2.x*sz_1.x - sz_2.y*sz_1.y;
+			sz_sz[j + i*num_ens].y = sz_2.x*sz_1.y + sz_2.y*sz_1.x;	
+		}
+	}
+
+	// on GUP side 
+	double2 *ap_a_dev,*a_dev,*a_a_dev;
+	double2 *sz_dev,*sm_dev,*a_sz_dev,*a_sm_dev,*a_sp_dev;
+	double2 *sm_sp_dev,*sm_sz_dev,*sm_sm_dev,*sz_sz_dev;
+
+	// create observables on GPU side 
+	cudaMalloc((void**)&ap_a_dev,sizeof(double2));
+	cudaMalloc((void**)&a_dev,sizeof(double2));
+	cudaMalloc((void**)&a_a_dev,sizeof(double2));
+
+	cudaMalloc((void**)&sz_dev,num_ens*sizeof(double2));
+	cudaMalloc((void**)&sm_dev,num_ens*sizeof(double2));
+	cudaMalloc((void**)&a_sz_dev,num_ens*sizeof(double2));
+	cudaMalloc((void**)&a_sm_dev,num_ens*sizeof(double2));
+	cudaMalloc((void**)&a_sp_dev,num_ens*sizeof(double2));
+
+	cudaMalloc((void**)&sm_sp_dev,num_ens*num_ens*sizeof(double2));
+	cudaMalloc((void**)&sm_sz_dev,num_ens*num_ens*sizeof(double2));
+	cudaMalloc((void**)&sm_sm_dev,num_ens*num_ens*sizeof(double2));
+	cudaMalloc((void**)&sz_sz_dev,num_ens*num_ens*sizeof(double2));
+
+
+
+	// copy observables on GPU side 
+	cudaMemcpy(ap_a_dev,&ap_a,sizeof(double2),cudaMemcpyHostToDevice);
+	cudaMemcpy(a_dev,&a,sizeof(double2),cudaMemcpyHostToDevice);
+	cudaMemcpy(a_a_dev,&a_a,sizeof(double2),cudaMemcpyHostToDevice);
+
+	cudaMemcpy(sz_dev,sz,num_ens*sizeof(double2),cudaMemcpyHostToDevice);
+	cudaMemcpy(sm_dev,sm,num_ens*sizeof(double2),cudaMemcpyHostToDevice);
+	cudaMemcpy(a_sz_dev,a_sz,num_ens*sizeof(double2),cudaMemcpyHostToDevice);
+	cudaMemcpy(a_sm_dev,a_sm,num_ens*sizeof(double2),cudaMemcpyHostToDevice);
+	cudaMemcpy(a_sp_dev,a_sp,num_ens*sizeof(double2),cudaMemcpyHostToDevice);
+
+	cudaMemcpy(sm_sp_dev,sm_sp,num_ens*num_ens*sizeof(double2),cudaMemcpyHostToDevice);
+	cudaMemcpy(sm_sz_dev,sm_sz,num_ens*num_ens*sizeof(double2),cudaMemcpyHostToDevice);
+	cudaMemcpy(sm_sm_dev,sm_sm,num_ens*num_ens*sizeof(double2),cudaMemcpyHostToDevice);
+	cudaMemcpy(sz_sz_dev,sz_sz,num_ens*num_ens*sizeof(double2),cudaMemcpyHostToDevice);
+
+	//***************
+	// derivatives 
+	double2 *d_ap_a_dev,*d_a_dev,*d_a_a_dev;
+	double2 *d_sz_dev,*d_sm_dev,*d_a_sz_dev,*d_a_sm_dev,*d_a_sp_dev;
+	double2 *d_sm_sp_dev,*d_sm_sz_dev,*d_sm_sm_dev,*d_sz_sz_dev;
+
+	// create observables on GPU side 
+	cudaMalloc((void**)&d_ap_a_dev,sizeof(double2));
+	cudaMalloc((void**)&d_a_dev,sizeof(double2));
+	cudaMalloc((void**)&d_a_a_dev,sizeof(double2));
+
+	cudaMalloc((void**)&d_sz_dev,num_ens*sizeof(double2));
+	cudaMalloc((void**)&d_sm_dev,num_ens*sizeof(double2));
+	cudaMalloc((void**)&d_a_sz_dev,num_ens*sizeof(double2));
+	cudaMalloc((void**)&d_a_sm_dev,num_ens*sizeof(double2));
+	cudaMalloc((void**)&d_a_sp_dev,num_ens*sizeof(double2));
+
+	cudaMalloc((void**)&d_sm_sp_dev,num_ens*num_ens*sizeof(double2));
+	cudaMalloc((void**)&d_sm_sz_dev,num_ens*num_ens*sizeof(double2));
+	cudaMalloc((void**)&d_sm_sm_dev,num_ens*num_ens*sizeof(double2));
+	cudaMalloc((void**)&d_sz_sz_dev,num_ens*num_ens*sizeof(double2));
+
+	FILE *Result_time, *Result_Sz, *Result_photon, *Result_coherences_real;
 	
-	update_correlations<<<num_ens,num_ens>>>(num_ens,t_step,sm_sp_dev,sm_sz_dev,sm_sm_dev,sz_sz_dev,\
-						d_sm_sp_dev,d_sm_sz_dev,d_sm_sm_dev,d_sz_sz_dev);
-	cudaThreadSynchronize();
+	// time of simulation
+	//************************************************************************************** OPEN FILE *********************************
+		// Warning: handle must not be longer than 60 characters = keep it short
+		// Space is allowed, just enclose with 
+	char fname1[100];
+	char fname2[100];
+	char fname3[100];
+	char fname4[100];
 
-	if ( t%t_store == 0) {
-	// copy the calculate observables back to CPU side 
+
+	snprintf(fname1, 100, "Result_time_%s.dat", handle);
+	Result_time = fopen(fname1,"w");
+	
+	
+	snprintf(fname2, 100, "Result_Sz_%s.dat", handle);
+	Result_Sz = fopen(fname2,"w");
+
+	snprintf(fname3, 100, "Result_photon_%s.dat", handle);
+	Result_photon= fopen(fname3,"w");
+
+	snprintf(fname4, 100, "Result_coherences_real_%s.dat", handle);
+	Result_coherences_real= fopen(fname4,"w");
 
 
-		cudaMemcpy(sz,sz_dev,num_ens*sizeof(double2),cudaMemcpyDeviceToHost);
-		cudaMemcpy(sm,sm_dev,num_ens*sizeof(double2),cudaMemcpyDeviceToHost);
-		cudaMemcpy(sm_sp,sm_sp_dev,num_ens*sizeof(double2),cudaMemcpyDeviceToHost);
-		cudaMemcpy(&ap_a,ap_a_dev,sizeof(double2),cudaMemcpyDeviceToHost);
-		cudaMemcpy(&a,a_dev,sizeof(double2),cudaMemcpyDeviceToHost);
+	// ***********************************
+	// simulations starts
+	// ***********************************
+	clock_t start_clock, end_clock;
+	start_clock = clock();
+	double tc;
+
+
+	// update the old reduced density matrix 
+	for (int t = 1; t < t_num; t++){
+		// printf("t %i of t_num %i, tc %1f \n", t, t_num, tc);
+		tc = t*t_step;
+		// printf("tc %1f \n", tc);
+
+		//************************************
+		// calculate derivatives 
+
+		// calculate the photon observables
+		// ap_a, a, a_a 
+		calculate_photons<<<1,1>>>(tc,num_ens,para_a_dev,para_c_dev,\
+					ap_a_dev,a_dev,a_a_dev,\
+					a_sp_dev,sm_dev,a_sm_dev,\
+					d_ap_a_dev,d_a_dev,d_a_a_dev);
+		cudaThreadSynchronize();
+
+		// calculate the atomic observables and atom-photon correlations
+		// sz, sm, a_sz, a_sm, a_sp 
+		calculate_atoms<<<1,num_ens>>>(tc,num_ens,para_a_dev,para_c_dev,\
+						sz_dev,sm_dev,a_sz_dev,a_sm_dev,a_sp_dev,\
+						sm_sp_dev,sm_sm_dev,sm_sz_dev,a_dev,ap_a_dev,a_a_dev,\
+						d_sz_dev,d_sm_dev,d_a_sz_dev,d_a_sm_dev,d_a_sp_dev);
+		cudaThreadSynchronize();
+
+		// calculate the atom-atom correlations 
+		// sm_sp, sm_sz, sm_sm, sz_sz
+		calculate_correlations<<<num_ens,num_ens>>>(num_ens,t_step,para_a_dev,para_c_dev,\
+							sm_sp_dev,sm_sz_dev,sm_sm_dev,sz_sz_dev,\
+							a_dev,a_sm_dev,a_sp_dev,a_sz_dev,sm_dev,sz_dev,\
+							d_sm_sp_dev,d_sm_sz_dev,d_sm_sm_dev,d_sz_sz_dev);
+		cudaThreadSynchronize();
+
+		//*************************************
+		// update observables
+
+		update_photons<<<1,1>>>(t_step,ap_a_dev,a_dev,a_a_dev,\
+					d_ap_a_dev,d_a_dev,d_a_a_dev);
 		cudaThreadSynchronize();
 
 
-
-	// store the file
-		fprintf(Result_time,"%e \n",(double)t*t_step);
-		fprintf(Result_photon,"%e \n",ap_a.x);
-		fprintf(Result_field,"%e %e \n",a.x,a.y);
-		//printf("%1f	%e	\n",tc, ap_a.x);
-	
-	/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-		for (int i = 0; i < num_ens; i++) {
-			fprintf(Result_Sz,"%e ",sz[i].x);
-			fprintf(Result_Sm,"%e %e  ",sm[i].x, sm[i].y);
-			fprintf(coherences_real,"%e ",sm_sp[i].x);
-		}
-		fprintf(Result_Sz,"\n");
-		fprintf(Result_Sm,"\n");
-		fprintf(coherences_real,"\n");
+		update_atoms<<<1,num_ens>>>(num_ens,t_step,para_a_dev,sz_dev,sm_dev,a_sz_dev,a_sm_dev,a_sp_dev,\
+					d_sz_dev,d_sm_dev,d_a_sz_dev,d_a_sm_dev,d_a_sp_dev);
+		cudaThreadSynchronize();
 		
-	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		update_correlations<<<num_ens,num_ens>>>(num_ens,t_step,sm_sp_dev,sm_sz_dev,sm_sm_dev,sz_sz_dev,\
+							d_sm_sp_dev,d_sm_sz_dev,d_sm_sm_dev,d_sz_sz_dev);
+		cudaThreadSynchronize();
+
+		if ( t%t_store == 0) {
+		// copy the calculate observables back to CPU side 
+
+
+			cudaMemcpy(sz,sz_dev,num_ens*sizeof(double2),cudaMemcpyDeviceToHost);
+			cudaMemcpy(sm,sm_dev,num_ens*sizeof(double2),cudaMemcpyDeviceToHost);
+			cudaMemcpy(sm_sp,sm_sp_dev,num_ens*sizeof(double2),cudaMemcpyDeviceToHost);
+			cudaMemcpy(&ap_a,ap_a_dev,sizeof(double2),cudaMemcpyDeviceToHost);
+			cudaMemcpy(&a,a_dev,sizeof(double2),cudaMemcpyDeviceToHost);
+			cudaThreadSynchronize();
+
+		// store the file
+			fprintf(Result_time,"%e \n",(double)t*t_step);
+			fprintf(Result_photon,"%e \n",ap_a.x);
+			//printf("%1f	%e	\n",tc, ap_a.x);
+		
+		/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+			for (int i = 0; i < num_ens; i++) {
+				fprintf(Result_Sz,"%e ",sz[i].x);
+				fprintf(Result_coherences_real,"%e ",sm_sp[i].x);
+			}
+			fprintf(Result_Sz,"\n");
+			fprintf(Result_coherences_real,"\n");
+			
+		//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+		}
 	}
+
+
+	// close the files
+	fclose(Result_time);
+	fclose(Result_Sz);
+	fclose(Result_photon);
+	fclose(Result_coherences_real);
+
+
+	// close the memories 
+
+	cudaFree(para_a_dev); cudaFree(para_c_dev); cudaFree(t_step_dev);
+
+	cudaFree(ap_a_dev); cudaFree(a_dev); cudaFree(a_a_dev);
+
+	cudaFree(sz_dev); cudaFree(sm_dev); cudaFree(a_sz_dev);
+	cudaFree(a_sm_dev);cudaFree(a_sp_dev);
+
+	cudaFree(sm_sp_dev); cudaFree(sm_sz_dev);
+	cudaFree(sm_sm_dev); cudaFree(sz_sz_dev);
+
+	cudaFree(d_ap_a_dev); cudaFree(d_a_dev); cudaFree(d_a_a_dev);
+
+	cudaFree(d_sz_dev); cudaFree(d_sm_dev); cudaFree(d_a_sz_dev);
+	cudaFree(d_a_sm_dev);cudaFree(d_a_sp_dev);
+
+	cudaFree(d_sm_sp_dev); cudaFree(d_sm_sz_dev);
+	cudaFree(d_sm_sm_dev); cudaFree(d_sz_sz_dev);
+
+	free(inhomo);
+	free(N_a);
+	free(omega_a);
+	free(gamma_a);
+	free(eta_a);
+	free(chi_a);
+	free(coup_a);
+	free(loss_a);
+	free(para_a);
+	free(theta);
+	free(phi);
+	free(cu);
+	free(cl);
+	free(sz);
+	free(sm);
+	free(a_sz);
+	free(a_sm);
+	free(a_sp);
+	free(sm_sp);
+	free(sm_sz);
+	free(sm_sm);
+	free(sz_sz);
+
+	end_clock = clock();
+	// fprintf(stderr,"Program takes about %.2f s\n",(double)(ct1-ct0)/(double)CLOCKS_PER_SEC);
+	printf("Program takes about %.2f s\n",(double)(end_clock - start_clock)/(double)CLOCKS_PER_SEC);
+	return 0;
 }
 
+// Loads 2D matrix data from file (for e.g "Detuning.dat") 
+// and assign it into given `out` 1D double array.
+// 
+// The size of `out` array MUST match the file or bigger.
+// - size of `out` = number_of_rows * number_of_columns
+// - if size of `out` is smaller, out-of-bound errors would occur.
+// 
+// The function expects the file to be in the following format:
+// - Each row is separated by a newline '\n'.
+// - Each column is separated by a tab '\t'.
+// - Each row should not be more than 4096 characters.
+int loadDoubleData(char* filename, double* out) {
 
-// close the files
-fclose(Result_time);
-fclose(Result_Sz);
-fclose(Result_photon);
-fclose(Result_field);
-fclose(coherences_real);
+	// File pointer to data file
+	FILE* fp;
 
+	// Open file 
+	fp = fopen(filename, "r");
+	if (fp == NULL) {
+		printf("[loadDoubleData] Error: File (%s) does not exists\n", filename);
+		// Return with error (1: file not found)
+		return 1;
+	}
 
-// close the memories 
+    const char col_delim[] = "\t"; 	// Column delimiter
+	char row[4096];		// This will store each fget attempt, might not be the entire line if the line exceeds buffer size
+	char* col;			// This will store each tab-delimited value in the line
+	int idx = 0;		// Keeps count of how many rows*columns we've parsed
 
-cudaFree(para_a_dev); cudaFree(para_c_dev); cudaFree(t_step_dev);
+	printf("[loadDoubleData] Reading data file: %s\n", filename);
+	while (fgets(row, sizeof(row), fp)) {
+		// TODO: check if the line read is complete (ends with newline)
 
-cudaFree(ap_a_dev); cudaFree(a_dev); cudaFree(a_a_dev);
+		// Remove trailing newline
+		row[strcspn(row, "\n")] = 0;
 
-cudaFree(sz_dev); cudaFree(sm_dev); cudaFree(a_sz_dev);
-cudaFree(a_sm_dev);cudaFree(a_sp_dev);
+		// Split line by delimiter (tab)
+		col = strtok(row, col_delim);
+		while(col != NULL) {
+			// Convert string to double value
+			double val = strtod(col, NULL);
 
-cudaFree(sm_sp_dev); cudaFree(sm_sz_dev);
-cudaFree(sm_sm_dev); cudaFree(sz_sz_dev);
-
-cudaFree(d_ap_a_dev); cudaFree(d_a_dev); cudaFree(d_a_a_dev);
-
-cudaFree(d_sz_dev); cudaFree(d_sm_dev); cudaFree(d_a_sz_dev);
-cudaFree(d_a_sm_dev);cudaFree(d_a_sp_dev);
-
-cudaFree(d_sm_sp_dev); cudaFree(d_sm_sz_dev);
-cudaFree(d_sm_sm_dev); cudaFree(d_sz_sz_dev);
-
-free(axe);
-free(inhomo);
-free(N_a);
-free(omega_a);
-free(gamma_a);
-free(eta_a);
-free(chi_a);
-free(coup_a);
-free(loss_a);
-free(para_a);
-free(theta);
-free(phi);
-free(cu);
-free(cl);
-free(sz);
-free(sm);
-free(a_sz);
-free(a_sm);
-free(a_sp);
-free(sm_sp);
-free(sm_sz);
-free(sm_sm);
-free(sz_sz);
-
-ct1=clock();
-// fprintf(stderr,"Program takes about %.2f s\n",(double)(ct1-ct0)/(double)CLOCKS_PER_SEC);
-printf("Program takes about %.2f s\n",(double)(ct1-ct0)/(double)CLOCKS_PER_SEC);
-printf("Program takes about %.2f s (after sim)\n",(double)(ct1-ct3)/(double)CLOCKS_PER_SEC);
-return 0;
+			// Add value to the out array
+			out[idx++] = val;
+			
+			// Continue tokenizing the rest of the string
+			col = strtok(NULL, col_delim);
+		}
+	}
+	// Close file
+	fclose(fp);
+	
+	// No error
+	return 0;
 }
