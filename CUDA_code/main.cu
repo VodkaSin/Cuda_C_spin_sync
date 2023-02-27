@@ -82,7 +82,7 @@ int main(int argc, char** argv) {
 	int ens_size = N_total/num_ens; // Number of spins in each class (uniform distribution)
 
 	// Initial state
-		// sin(theta_0/2)|e> + cos(theta_0/2)exp(i*phi_0)|g>
+		// CSS = cos(theta/2)|g> + sin(theta/2)e^i*phi |e>
 		// theta_0 = PI fully excited, theta_0 = 0 fully grounded
 	double theta_0 = atof(argv[3])*PI;
 	double phi_0 = atof(argv[4])*PI; 
@@ -92,41 +92,31 @@ int main(int argc, char** argv) {
 	double coup_a_0 =  atof(argv[5]); 	// Atom-cavity coupling
 	double gamma_a_0 = atof(argv[6]); 	// Atom decay rate: [lower_a]
 	double chi_a_0 =   atof(argv[7]); 	// Atom dephase rate: [sz]
-	// SM Not taking effect yet
 	double kappa_c_0 = atof(argv[8]); 	// Cavity decay rate: [a]
 	double loss_0 =    0.0;				// Atom loss (population decreases rate)
 	double omega_c =   0.0; 			// Cavity detuning
-	double kappa_1_c = 1.0*100.0;		// LEFT MIRROR DECAY
-	double kappa_2_c = 1.0*100.0;		// RIGHT MIRROR DECAY
-	double eta_a_0 =   0.0;				// ATOM PUMPING
+	double kappa_1_c = kappa_c_0/2.0;	// Left mirror decay
+	double kappa_2_c = kappa_c_0/2.0;	// Right mirror decay
+	double eta_a_0 =   0.0;				// Atom pumping: [sp]
 
 	//************************************************************************************** TIME CONSTANTS ********************************
-	double t_max = atof(argv[9]);					// T_END
-	int t_num = atoi(argv[10]);						// NUMBER OF STEPS
-	double t_step = t_max/t_num;					// dT (SIZE OF EACH STEP)
-	int t_store_num = 20000;
-	int t_store =  t_num/t_store_num;
+	double t_max = atof(argv[9]);					// End of simulation
+	int t_num = atoi(argv[10]);						// Total number of steps
+	double t_step = t_max/t_num;					// dt size of each step
+	int t_store_num = 20000;						// Total number of stored (CPU) time steps
+	int t_store =  t_num/t_store_num;				// Number of steps on GPU before storing on CPU
 	
-	// SGK check that t_num is larger than t_store_num, or it won't complete a run.
+	// Total number of steps > stored steps or exit
 	if (t_num < t_store_num) {
 		printf("[invalid param] Specify a 't_num' larger than or equal to %i", t_store_num);
+		exit(EXIT_FAILURE);
 		return;
 	}
 
 	// File handle
 	char* handle = argv[11];
 
-	// double inhomo[num_ens];
-	double* inhomo = new double[num_ens];  // SGK
-
-	// Writing in inhomo[]
-	double maxdetun = 500;
-	double sigma = 0.022;
-	double sqrthalf = 0.707;
-	// Deleted
-
-
-	//********************************************************************************************* PARAMETERS FOR SQUARE PULSE ********************************************************
+	//*************************************************************************************** PARAMETERS FOR SQUARE PULSE ******************
 
 	double omega_d = 0.2;						// FREQUENCY OF SQUARE PULSE FOR INITIALIZATION
 	//double coup_d =  0.0;					        // AMPLITUDE OF THE PULSE
@@ -135,7 +125,7 @@ int main(int argc, char** argv) {
 	//1.943*1.0E-7			
 
 
-	//********************************************************************************************* PARAMETERS FOR OUTPUT POINTS *****************************************************
+	//*************************************************************************************** INITIALIZE ENSEMBLES (CLASSES) ***************
 
 	// double N_a[num_ens],omega_a[num_ens],gamma_a[num_ens],\
 			eta_a[num_ens],chi_a[num_ens],coup_a[num_ens],loss_a[num_ens];
@@ -146,11 +136,10 @@ int main(int argc, char** argv) {
 	double* chi_a = new double[num_ens];
 	double* coup_a = new double[num_ens];
 	double* loss_a = new double[num_ens];
-	// SGK
 
 	for (int i =0; i < num_ens; i++){
 		N_a[i] = ens_size;
-		// omega_a[i] = 10; // SGK omega_a is loaded from detuning data file instead; see below.
+		// omega_a[i] = 10; // omega_a is loaded from Detuning.dat instead; see below.
 		gamma_a[i] = gamma_a_0;
 		eta_a[i] = eta_a_0;
 		chi_a[i] = chi_a_0;
@@ -172,32 +161,30 @@ int main(int argc, char** argv) {
 	// 	printf("%f\n", omega_a[i]);
 	// }
 
-	// the parameters in an array 
-	// double para_a[7*num_ens];
-	// SGK
+	// Parameters related to the atoms concatenated
+	// E.g. num_ens = 3, para_a = [det1, det2, det3, dec1, dec2, dec3, ...]
 	double* para_a = new double[7*num_ens];
 
 	for  (int i = 0; i < num_ens; i++){
 		para_a[i] = N_a[i];
-		para_a[i+num_ens] = omega_a[i];
-		para_a[i+2*num_ens] = gamma_a[i];
-		para_a[i+3*num_ens] = eta_a[i];
-		para_a[i+4*num_ens] = chi_a[i];
-		para_a[i+5*num_ens] = coup_a[i];
+		para_a[i+num_ens] = omega_a[i];		// Detuning
+		para_a[i+2*num_ens] = gamma_a[i];	// Decay
+		para_a[i+3*num_ens] = eta_a[i];		// Pump
+		para_a[i+4*num_ens] = chi_a[i];		// Dephase
+		para_a[i+5*num_ens] = coup_a[i];	// Coupling
 		para_a[i+6*num_ens] = loss_a[i];
 	}
 
-	// copy the parameters into the memory in GPU
+	// Copy the parameters into the memory in GPU
+	// Changed allocation size from 6 to 7
+
 	double *para_a_dev;
-	cudaMalloc((void**)&para_a_dev,6*num_ens*sizeof(double)); 
-	cudaMemcpy(para_a_dev,para_a,6*num_ens*sizeof(double),cudaMemcpyHostToDevice);
-
-	//*******************************
-	// parameters for initial states 
+	cudaMalloc((void**)&para_a_dev,7*num_ens*sizeof(double)); 
+	cudaMemcpy(para_a_dev,para_a,7*num_ens*sizeof(double),cudaMemcpyHostToDevice);
 
 
-	// double theta[num_ens],phi[num_ens];
-	// SGK
+	//************************************************************************************** INITIALIZE COHERENT SPIN STATE ***************
+
 	double* theta = new double[num_ens];
 	double* phi = new double[num_ens];
 
@@ -206,8 +193,10 @@ int main(int argc, char** argv) {
 		phi[i] = phi_0;
 	}
 
-	// double2 cu[num_ens],cl[num_ens];
-	// SGK
+	// CSS = cos(theta/2)|g> + sin(theta/2)e^i*phi |e>
+	// cu coefficient for the excited state
+	// cl coefficient for the ground state
+
 	double2* cu = new double2[num_ens];
 	double2* cl = new double2[num_ens];
 
@@ -241,10 +230,6 @@ int main(int argc, char** argv) {
 
 
 
-
-
-
-
 	// on CPU side 
 	double2 ap_a,a,a_a;
 	// double2 sz[num_ens],sm[num_ens],a_sz[num_ens],a_sm[num_ens],a_sp[num_ens];
@@ -264,8 +249,7 @@ int main(int argc, char** argv) {
 	// for initial values 
 	double2 sm_1,sp_1,sz_1,sm_2,sz_2; 
 
-	//****************************
-	// initialize the observables
+	//************************************************************************************** INITIALIZE OBSERVABLES ***************
 	ap_a.x = 0.; ap_a.y = 0.; a.x = 0.; a.y = 0.; a_a.x =0.; a_a.y = 0.; 
 
 	for (int i= 0; i < num_ens; i++){
@@ -522,7 +506,6 @@ int main(int argc, char** argv) {
 	cudaFree(d_sm_sp_dev); cudaFree(d_sm_sz_dev);
 	cudaFree(d_sm_sm_dev); cudaFree(d_sz_sz_dev);
 
-	delete[] inhomo;
 	delete[] N_a;
 	delete[] omega_a;
 	delete[] gamma_a;
