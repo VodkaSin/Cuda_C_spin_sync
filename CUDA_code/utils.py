@@ -1,5 +1,17 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.stats import norm
+
+def gen_same_pop(N_spin, k, max_det):
+    #########################################
+    # Return array of N_spin in k classes (uniformly distributed) and detuning distribution (k array)
+    # The detuning distribution follows a standard normal distribution with classes spread across 99% (3*sigma) of [0, max_det]
+    # E.g. detuning = gen_same_pop(100, 5, 50000)
+    ########################################
+    pop = np.asarray([int(N_spin/k) for i in range(k)])
+    det = max_det * np.asarray([2*(1-norm.cdf(i)) for i in np.linspace(0,3,k)])
+    return pop, det
+
 
 def unit_time(gk, N_spin, kappa):
     #########################################
@@ -55,3 +67,18 @@ def plot_heat(x, y, z, z_min, z_max):
     plt.title('$<\sigma_z>$',fontsize=18)
     plt.ylabel('Detuning',fontsize=18)
     plt.xlabel('Time$(\mu s)$',fontsize=18)
+
+
+def read_results(handle):
+    # Input: string (suffix of files)
+    # Output: np arrays of t_store 
+    result_sz_filename = f"Result_Sz_{handle}.dat"
+    result_coherences_filename = f"Result_coherences_real_{handle}.dat"
+    result_photon_filename = f"Result_photon_{handle}.dat"
+    result_time_filename = f"Result_time_{handle}.dat"
+
+    result_sz = np.loadtxt(result_sz_filename, dtype=np.longdouble)
+    result_coherences = np.loadtxt(result_coherences_filename, dtype=np.longdouble)
+    result_photon = np.loadtxt(result_photon_filename, dtype=np.longdouble)
+    result_time = np.loadtxt(result_time_filename, dtype=np.longdouble)
+    return result_time, result_sz, result_coherences, result_photon
