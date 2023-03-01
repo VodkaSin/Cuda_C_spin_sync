@@ -1,6 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
+import re
+from subprocess import Popen, PIPE, STDOUT
+from tqdm import tqdm
+
 
 def gen_same_pop(k, max_det):
     #########################################
@@ -85,3 +89,59 @@ def read_results(handle):
     result_photon = np.loadtxt(result_photon_filename, dtype=np.longdouble)
     result_time = np.loadtxt(result_time_filename, dtype=np.longdouble)
     return result_time, result_sz, result_coherences, result_photon
+
+
+def runcmd(command):
+    #########################################
+    # Runs the given command and its options as a subprocess.
+    # It redirects and intercepts all stdout and stderr 
+    # so that it can process and decides what to print depending on the line.
+    # For e.g if the stdout line is the progress bar from the command,
+    # it will use `tqdm` library to show it a pretty progress bar in our jupyter cell output
+    #
+    # This came from a need to show the progress bar for a simulation run 
+    # but the jupyter cell output don't like it very much. 
+    ########################################
+    t = None        # `t` will be the progress bar object
+    prev_pv = -1    # `prev_pv` will contain previous iteration's progress bar value (pv)
+    
+    # Run the command as a subprocess
+    process = Popen(command, stdout=PIPE, shell=False, stderr=STDOUT, bufsize=1, close_fds=True, universal_newlines=True)
+    
+    # Iterate through each line and decide what to do with it
+    for line in iter(process.stdout.readline, b''):
+        
+        # If line is empty, exit loop (we assume that's when command has completed)
+        if len(line) == 0:
+            break
+        
+        # Check if we got the 'progress' line (e.g " 13% [|||||||        ]")
+        progress = re.findall(r"^\s*(\d+)%\s*\[.*\].*", line)
+        if (len(progress) > 0):
+            # Get the current progress value (pv)
+            pv = int(progress[0])
+            
+            # We only update the progress bar if its value is different from the prev iterations
+            if pv > prev_pv and pv < 100:
+                # Initialize progress bar
+                if t is None:
+                    bar_format = '{percentage:3.0f}% [{bar} ]'
+                    t = tqdm(total=100, bar_format=bar_format, colour='green')
+                
+                # Manually update the progress bar by passing in the increment
+                t.update(pv-prev_pv)
+                
+                # Force refresh the bar
+                t.refresh()
+                
+                # Store the current line pv
+                prev_pv = pv
+        else:
+            # Print line
+            print(line, end="") 
+    
+    # Clean up
+    if t is not None:
+        t.close()
+    process.stdout.close()
+    process.wait()
