@@ -466,7 +466,7 @@ int main(int argc, char** argv) {
 				}
 				
 				fprintf(Result_Sz,"%e ",sz[i].x);
-				fprintf(Result_coherences_real,"%e ",sm_sp[i].x);
+				fprintf(Result_coherences_real,"%e ",sm_sp[i].x); //changed from [i] to [i*num_ens] to print diagonal
 			}
 			fprintf(Result_Sz,"\n");
 			fprintf(Result_coherences_real,"\n");

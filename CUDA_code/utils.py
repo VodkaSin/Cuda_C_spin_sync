@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 
-def gen_same_pop(N_spin, k, max_det):
+def gen_same_pop(k, max_det):
     #########################################
     # Return array of N_spin in k classes (uniformly distributed) and detuning distribution (k array)
     # The detuning distribution follows a standard normal distribution with classes spread across 99% (3*sigma) of [0, max_det]
@@ -64,7 +64,8 @@ def plot_heat(x, y, z, z_min, z_max, title, xlabel, ylabel):
     # z: dependent variable, dimension dim(x)*dim(y)
     # z_min, z_max: range of z to plot
     # x and ylabels supports latex
-    c = plt.pcolormesh(x, y, z, cmap = 'CMRmap', vmin = z_min, vmax = z_max)
+    y_rot = y[::-1]
+    c = plt.pcolormesh(x, y_rot, z, cmap = 'CMRmap', vmin = z_min, vmax = z_max)
     plt.colorbar(c)
     plt.title(f'{title}',fontsize=12)
     plt.ylabel(f'{ylabel}',fontsize=12)
