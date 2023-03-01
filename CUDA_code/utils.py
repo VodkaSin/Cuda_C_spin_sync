@@ -58,15 +58,16 @@ def findTd(sz,t_list):
     else:
         return t_list[i]
     
-def plot_heat(x, y, z, z_min, z_max):
+def plot_heat(x, y, z, z_min, z_max, title, xlabel, ylabel):
     # x,y: x and y axis variables
     # z: dependent variable, dimension dim(x)*dim(y)
     # z_min, z_max: range of z to plot
+    # x and ylabels supports latex
     c = plt.pcolormesh(x, y, z, cmap = 'CMRmap', vmin = z_min, vmax = z_max)
     plt.colorbar(c)
-    plt.title('$<\sigma_z>$',fontsize=18)
-    plt.ylabel('Detuning',fontsize=18)
-    plt.xlabel('Time$(\mu s)$',fontsize=18)
+    plt.title(f'{title}',fontsize=12)
+    plt.ylabel(f'{ylabel}',fontsize=12)
+    plt.xlabel(f'{xlabel}',fontsize=12)
 
 
 def read_results(handle):
