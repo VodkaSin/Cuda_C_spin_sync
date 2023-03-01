@@ -8,9 +8,10 @@ def gen_same_pop(N_spin, k, max_det):
     # The detuning distribution follows a standard normal distribution with classes spread across 99% (3*sigma) of [0, max_det]
     # E.g. detuning = gen_same_pop(100, 5, 50000)
     ########################################
-    pop = np.asarray([int(N_spin/k) for i in range(k)])
+    # pop = np.asarray([int(N_spin/k) for i in range(k)])
     det = max_det * np.asarray([2*(1-norm.cdf(i)) for i in np.linspace(0,3,k)])
-    return pop, det
+    det = det[::-1]
+    return det
 
 
 def unit_time(gk, N_spin, kappa):
