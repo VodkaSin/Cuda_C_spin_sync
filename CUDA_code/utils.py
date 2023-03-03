@@ -6,17 +6,29 @@ from subprocess import Popen, PIPE, STDOUT
 from tqdm import tqdm
 
 
-def gen_same_pop(k, max_det):
+def gen_same_pop(k, max_det, pos=True):
     #########################################
-    # Return array of N_spin in k classes (uniformly distributed) and detuning distribution (k array)
-    # The detuning distribution follows a standard normal distribution with classes spread across 99% (3*sigma) of [0, max_det]
+    # Return the detuning array from small to large
+    # Arguments: 
+    #           k: number of classes intended
+    #           max_det: 3 sigma for generating the distribution
+    #           pos: Bool, True for only generating positive detunings, False splits half for negative
     # E.g. detuning = gen_same_pop(100, 5, 50000)
     ########################################
     # pop = np.asarray([int(N_spin/k) for i in range(k)])
-    det = max_det * np.asarray([2*(1-norm.cdf(i)) for i in np.linspace(0,3,k)])
-    det = det[::-1]
-    return det
-
+    if pos == True:
+        det = max_det * np.asarray([2*(1-norm.cdf(i)) for i in np.linspace(0,3,k)])
+        return det[::-1]
+    elif k%2 == 0:
+        # Even number of classes:
+        det_pos = max_det * np.asarray([2*(1-norm.cdf(i)) for i in np.linspace(0,3,int(k/2))])
+        det_neg = -det_pos
+        return np.concatenate((det_neg, det_pos[::-1]), axis=None)
+    else: 
+        # Odd number of classes, set the middle one to be 0
+        det_pos = max_det * np.asarray([2*(1-norm.cdf(i)) for i in np.linspace(0,3,int((k-1)/2))])
+        det_neg = -det_pos
+        return np.concatenate((det_neg, np.zeros(1), det_pos[::-1]), axis=None)
 
 def unit_time(gk, N_spin, kappa):
     #########################################
