@@ -75,14 +75,14 @@ int main(int argc, char** argv) {
 	printf("t_num:\t\t\t\t%s\n", argv[10]);
 	printf("\n");
 
-	//************************************************************************** INITIAL PARAM *********************************
+	//************************************************************************************** INITIAL PARAM *********************************
 	// Ensemble settings
 	int num_ens = atoi(argv[1]); 	// Number of classes
 	int N_total = atoi(argv[2]); 	// Number of spins
 	int ens_size = N_total/num_ens; // Number of spins in each class (uniform distribution)
 
 	// Initial state
-		// CSS = cos(theta/2)|g> + sin(theta/2)e^i*phi |e>
+		// sin(theta_0/2)|e> + cos(theta_0/2)exp(i*phi_0)|g>
 		// theta_0 = PI fully excited, theta_0 = 0 fully grounded
 	double theta_0 = atof(argv[3])*PI;
 	double phi_0 = atof(argv[4])*PI; 
@@ -92,31 +92,41 @@ int main(int argc, char** argv) {
 	double coup_a_0 =  atof(argv[5]); 	// Atom-cavity coupling
 	double gamma_a_0 = atof(argv[6]); 	// Atom decay rate: [lower_a]
 	double chi_a_0 =   atof(argv[7]); 	// Atom dephase rate: [sz]
+	// SM Not taking effect yet
 	double kappa_c_0 = atof(argv[8]); 	// Cavity decay rate: [a]
 	double loss_0 =    0.0;				// Atom loss (population decreases rate)
 	double omega_c =   0.0; 			// Cavity detuning
-	double kappa_1_c = kappa_c_0/2.0;	// Left mirror decay
-	double kappa_2_c = kappa_c_0/2.0;	// Right mirror decay
-	double eta_a_0 =   0.0;				// Atom pumping: [sp]
+	double kappa_1_c = 1.0*100.0;		// LEFT MIRROR DECAY
+	double kappa_2_c = 1.0*100.0;		// RIGHT MIRROR DECAY
+	double eta_a_0 =   0.0;				// ATOM PUMPING
 
 	//************************************************************************************** TIME CONSTANTS ********************************
-	double t_max = atof(argv[9]);					// End of simulation
-	int t_num = atoi(argv[10]);						// Total number of steps
-	double t_step = t_max/t_num;					// dt size of each step
-	int t_store_num = 20000;						// Total number of stored (CPU) time steps
-	int t_store =  t_num/t_store_num;				// Number of steps on GPU before storing on CPU
+	double t_max = atof(argv[9]);					// T_END
+	int t_num = atoi(argv[10]);						// NUMBER OF STEPS
+	double t_step = t_max/t_num;					// dT (SIZE OF EACH STEP)
+	int t_store_num = 20000;
+	int t_store =  t_num/t_store_num;
 	
-	// Total number of steps > stored steps or exit
+	// SGK check that t_num is larger than t_store_num, or it won't complete a run.
 	if (t_num < t_store_num) {
 		printf("[invalid param] Specify a 't_num' larger than or equal to %i", t_store_num);
-		exit(EXIT_FAILURE);
 		return;
 	}
 
 	// File handle
 	char* handle = argv[11];
 
-	//*************************************************************************************** PARAMETERS FOR SQUARE PULSE ******************
+	// double inhomo[num_ens];
+	double* inhomo = (double*)malloc(num_ens*sizeof(double));  // SGK
+
+	// Writing in inhomo[]
+	double maxdetun = 500;
+	double sigma = 0.022;
+	double sqrthalf = 0.707;
+	// Deleted
+
+
+	//********************************************************************************************* PARAMETERS FOR SQUARE PULSE ********************************************************
 
 	double omega_d = 0.2;						// FREQUENCY OF SQUARE PULSE FOR INITIALIZATION
 	//double coup_d =  0.0;					        // AMPLITUDE OF THE PULSE
@@ -125,21 +135,22 @@ int main(int argc, char** argv) {
 	//1.943*1.0E-7			
 
 
-	//*************************************************************************************** INITIALIZE ENSEMBLES (CLASSES) ***************
+	//********************************************************************************************* PARAMETERS FOR OUTPUT POINTS *****************************************************
 
 	// double N_a[num_ens],omega_a[num_ens],gamma_a[num_ens],\
 			eta_a[num_ens],chi_a[num_ens],coup_a[num_ens],loss_a[num_ens];
-	double* N_a = new double[num_ens];
-	double* omega_a = new double[num_ens];
-	double* gamma_a = new double[num_ens];
-	double* eta_a = new double[num_ens];
-	double* chi_a = new double[num_ens];
-	double* coup_a = new double[num_ens];
-	double* loss_a = new double[num_ens];
+	double* N_a = (double*)malloc(num_ens*sizeof(double));
+	double* omega_a = (double*)malloc(num_ens*sizeof(double));
+	double* gamma_a = (double*)malloc(num_ens*sizeof(double));
+	double* eta_a = (double*)malloc(num_ens*sizeof(double));
+	double* chi_a = (double*)malloc(num_ens*sizeof(double));
+	double* coup_a = (double*)malloc(num_ens*sizeof(double));
+	double* loss_a = (double*)malloc(num_ens*sizeof(double));
+	// SGK
 
 	for (int i =0; i < num_ens; i++){
 		N_a[i] = ens_size;
-		// omega_a[i] = 10; // omega_a is loaded from Detuning.dat instead; see below.
+		// omega_a[i] = 10; // SGK omega_a is loaded from detuning data file instead; see below.
 		gamma_a[i] = gamma_a_0;
 		eta_a[i] = eta_a_0;
 		chi_a[i] = chi_a_0;
@@ -161,44 +172,44 @@ int main(int argc, char** argv) {
 	// 	printf("%f\n", omega_a[i]);
 	// }
 
-	// Parameters related to the atoms concatenated
-	// E.g. num_ens = 3, para_a = [det1, det2, det3, dec1, dec2, dec3, ...]
-	double* para_a = new double[7*num_ens];
+	// the parameters in an array 
+	// double para_a[7*num_ens];
+	// SGK
+	double* para_a = (double*)malloc(7*num_ens*sizeof(double));
 
 	for  (int i = 0; i < num_ens; i++){
 		para_a[i] = N_a[i];
-		para_a[i+num_ens] = omega_a[i];		// Detuning
-		para_a[i+2*num_ens] = gamma_a[i];	// Decay
-		para_a[i+3*num_ens] = eta_a[i];		// Pump
-		para_a[i+4*num_ens] = chi_a[i];		// Dephase
-		para_a[i+5*num_ens] = coup_a[i];	// Coupling
+		para_a[i+num_ens] = omega_a[i];
+		para_a[i+2*num_ens] = gamma_a[i];
+		para_a[i+3*num_ens] = eta_a[i];
+		para_a[i+4*num_ens] = chi_a[i];
+		para_a[i+5*num_ens] = coup_a[i];
 		para_a[i+6*num_ens] = loss_a[i];
 	}
 
-	// Copy the parameters into the memory in GPU
-	// Changed allocation size from 6 to 7
-
+	// copy the parameters into the memory in GPU
 	double *para_a_dev;
-	cudaMalloc((void**)&para_a_dev,7*num_ens*sizeof(double)); 
-	cudaMemcpy(para_a_dev,para_a,7*num_ens*sizeof(double),cudaMemcpyHostToDevice);
+	cudaMalloc((void**)&para_a_dev,6*num_ens*sizeof(double)); 
+	cudaMemcpy(para_a_dev,para_a,6*num_ens*sizeof(double),cudaMemcpyHostToDevice);
+
+	//*******************************
+	// parameters for initial states 
 
 
-	//************************************************************************************** INITIALIZE COHERENT SPIN STATE ***************
-
-	double* theta = new double[num_ens];
-	double* phi = new double[num_ens];
+	// double theta[num_ens],phi[num_ens];
+	// SGK
+	double* theta = (double*)malloc(num_ens*sizeof(double));
+	double* phi = (double*)malloc(num_ens*sizeof(double));
 
 	for (int i=0; i < num_ens; i++){
 		theta[i] = theta_0;
 		phi[i] = phi_0;
 	}
 
-	// CSS = cos(theta/2)|g> + sin(theta/2)e^i*phi |e>
-	// cu coefficient for the excited state
-	// cl coefficient for the ground state
-
-	double2* cu = new double2[num_ens];
-	double2* cl = new double2[num_ens];
+	// double2 cu[num_ens],cl[num_ens];
+	// SGK
+	double2* cu = (double2*)malloc(num_ens*sizeof(double2));
+	double2* cl = (double2*)malloc(num_ens*sizeof(double2));
 
 	for (int i=0; i< num_ens; i++){
 		cu[i].x = sin(0.5*theta[i])*cos(phi[i]);
@@ -230,26 +241,31 @@ int main(int argc, char** argv) {
 
 
 
+
+
+
+
 	// on CPU side 
 	double2 ap_a,a,a_a;
 	// double2 sz[num_ens],sm[num_ens],a_sz[num_ens],a_sm[num_ens],a_sp[num_ens];
 	// double2 sm_sp[num_ens*num_ens],sm_sz[num_ens*num_ens],\
 		sm_sm[num_ens*num_ens],sz_sz[num_ens*num_ens];
 
-	double2* sz = new double2[num_ens];
-	double2* sm = new double2[num_ens];
-	double2* a_sz = new double2[num_ens];
-	double2* a_sm = new double2[num_ens];
-	double2* a_sp = new double2[num_ens];
-	double2* sm_sp = new double2[num_ens*num_ens];
-	double2* sm_sz = new double2[num_ens*num_ens];
-	double2* sm_sm = new double2[num_ens*num_ens];
-	double2* sz_sz = new double2[num_ens*num_ens];
+	double2* sz = (double2*)malloc(num_ens*sizeof(double2));
+	double2* sm = (double2*)malloc(num_ens*sizeof(double2));
+	double2* a_sz = (double2*)malloc(num_ens*sizeof(double2));
+	double2* a_sm = (double2*)malloc(num_ens*sizeof(double2));
+	double2* a_sp = (double2*)malloc(num_ens*sizeof(double2));
+	double2* sm_sp = (double2*)malloc(num_ens*num_ens*sizeof(double2));
+	double2* sm_sz = (double2*)malloc(num_ens*num_ens*sizeof(double2));
+	double2* sm_sm = (double2*)malloc(num_ens*num_ens*sizeof(double2));
+	double2* sz_sz = (double2*)malloc(num_ens*num_ens*sizeof(double2));
 
 	// for initial values 
 	double2 sm_1,sp_1,sz_1,sm_2,sz_2; 
 
-	//************************************************************************************** INITIALIZE OBSERVABLES ***************
+	//****************************
+	// initialize the observables
 	ap_a.x = 0.; ap_a.y = 0.; a.x = 0.; a.y = 0.; a_a.x =0.; a_a.y = 0.; 
 
 	for (int i= 0; i < num_ens; i++){
@@ -351,7 +367,7 @@ int main(int argc, char** argv) {
 	FILE *Result_time, *Result_Sz, *Result_photon, *Result_coherences_real;
 	
 	// time of simulation
-	//************************************************************************** OPEN FILE *****************************************
+	//************************************************************************************** OPEN FILE *********************************
 		// Warning: handle must not be longer than 60 characters = keep it short
 		// Space is allowed, just enclose with 
 	char fname1[100];
@@ -466,7 +482,7 @@ int main(int argc, char** argv) {
 				}
 				
 				fprintf(Result_Sz,"%e ",sz[i].x);
-				fprintf(Result_coherences_real,"%e ",sm_sp[i].x); //changed from [i] to [i*num_ens] to print diagonal
+				fprintf(Result_coherences_real,"%e ",sm_sp[i].x);
 			}
 			fprintf(Result_Sz,"\n");
 			fprintf(Result_coherences_real,"\n");
@@ -506,27 +522,28 @@ int main(int argc, char** argv) {
 	cudaFree(d_sm_sp_dev); cudaFree(d_sm_sz_dev);
 	cudaFree(d_sm_sm_dev); cudaFree(d_sz_sz_dev);
 
-	delete[] N_a;
-	delete[] omega_a;
-	delete[] gamma_a;
-	delete[] eta_a;
-	delete[] chi_a;
-	delete[] coup_a;
-	delete[] loss_a;
-	delete[] para_a;
-	delete[] theta;
-	delete[] phi;
-	delete[] cu;
-	delete[] cl;
-	delete[] sz;
-	delete[] sm;
-	delete[] a_sz;
-	delete[] a_sm;
-	delete[] a_sp;
-	delete[] sm_sp;
-	delete[] sm_sz;
-	delete[] sm_sm;
-	delete[] sz_sz;
+	free(inhomo);
+	free(N_a);
+	free(omega_a);
+	free(gamma_a);
+	free(eta_a);
+	free(chi_a);
+	free(coup_a);
+	free(loss_a);
+	free(para_a);
+	free(theta);
+	free(phi);
+	free(cu);
+	free(cl);
+	free(sz);
+	free(sm);
+	free(a_sz);
+	free(a_sm);
+	free(a_sp);
+	free(sm_sp);
+	free(sm_sz);
+	free(sm_sm);
+	free(sz_sz);
 
 	end_clock = clock();
 	// fprintf(stderr,"Program takes about %.2f s\n",(double)(ct1-ct0)/(double)CLOCKS_PER_SEC);
