@@ -89,6 +89,8 @@ def cut_time(t_list, endtime):
     #########################################
     # Returns the index of t_list when endtime is reached
     #########################################
+    if endtime<0:
+        return -1
     return int(np.size(t_list)*endtime/t_list[-1])
     
 def plot_heat(x, y, z, z_min, z_max, title, xlabel, ylabel):
