@@ -85,6 +85,12 @@ def findTd(sz,t_list):
     else:
         return t_list[i]
     
+def cut_time(t_list, endtime):
+    #########################################
+    # Returns the index of t_list when endtime is reached
+    #########################################
+    return int(np.size(t_list)*endtime/t_list[-1])
+    
 def plot_heat(x, y, z, z_min, z_max, title, xlabel, ylabel):
     # x,y: x and y axis variables
     # z: dependent variable, dimension dim(x)*dim(y)
