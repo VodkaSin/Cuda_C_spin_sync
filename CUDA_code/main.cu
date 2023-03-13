@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
 	printf("t_num:\t\t\t\t%s\n", argv[10]);
 	printf("\n");
 
-	//************************************************************************************** INITIAL PARAM *********************************
+	//************************************************************************** INITIAL PARAM *********************************
 	// Ensemble settings
 	int num_ens = atoi(argv[1]); 	// Number of classes
 	int N_total = atoi(argv[2]); 	// Number of spins
@@ -351,7 +351,7 @@ int main(int argc, char** argv) {
 	FILE *Result_time, *Result_Sz, *Result_photon, *Result_coherences_real;
 	
 	// time of simulation
-	//************************************************************************************** OPEN FILE *********************************
+	//************************************************************************** OPEN FILE *****************************************
 		// Warning: handle must not be longer than 60 characters = keep it short
 		// Space is allowed, just enclose with 
 	char fname1[100];
