@@ -6,7 +6,7 @@ from subprocess import Popen, PIPE, STDOUT
 from tqdm import tqdm
 
 
-def gen_same_pop(k, max_det, pos=True):
+def gen_same_pop(k, max_det, pos=None):
     #########################################
     # Return the detuning array from small to large
     # Arguments: 
@@ -16,19 +16,29 @@ def gen_same_pop(k, max_det, pos=True):
     # E.g. detuning = gen_same_pop(100, 5, 50000)
     ########################################
     # pop = np.asarray([int(N_spin/k) for i in range(k)])
-    if pos == True:
+    if pos == None:
         det = max_det * np.asarray([2*(1-norm.cdf(i)) for i in np.linspace(0,3,k)])
         return det[::-1]
     elif k%2 == 0:
         # Even number of classes:
-        det_pos = max_det * np.asarray([2*(1-norm.cdf(i)) for i in np.linspace(0,3,int(k/2))])
-        det_neg = -det_pos
+        if pos == True:
+            det_pos = max_det * np.asarray([2*(1-norm.cdf(i)) for i in np.linspace(0,3,int(k/2))])
+            det_neg = -det_pos
+            return np.concatenate((det_neg, det_pos[::-1]), axis=None)
+        if pos == False:
+            det_pos = max_det * np.asarray([2*(1-norm.cdf(i)) for i in np.linspace(0,3,int(k/2))])
+            det_neg = det_pos
         return np.concatenate((det_neg, det_pos[::-1]), axis=None)
     else: 
         # Odd number of classes, set the middle one to be 0
-        det_pos = max_det * np.asarray([2*(1-norm.cdf(i)) for i in np.linspace(0,3,int((k-1)/2))])
-        det_neg = -det_pos
-        return np.concatenate((det_neg, np.zeros(1), det_pos[::-1]), axis=None)
+        if pos == True:
+            det_pos = max_det * np.asarray([2*(1-norm.cdf(i)) for i in np.linspace(0,3,int((k-1)/2))])
+            det_neg = -det_pos
+            return np.concatenate((det_neg, np.zeros(1), det_pos[::-1]), axis=None)
+        if pos == False:
+            det_pos = max_det * np.asarray([2*(1-norm.cdf(i)) for i in np.linspace(0,3,int((k-1)/2))])
+            det_neg = det_pos
+            return np.concatenate((det_neg, np.zeros(1), det_pos[::-1]), axis=None)
 
 def unit_time(gk, N_spin, kappa):
     #########################################
