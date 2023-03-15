@@ -84,6 +84,28 @@ def findTd(sz,t_list):
         i+=1
     else:
         return t_list[i]
+
+def crit_1(handle):
+    #########################################
+    # Input file handle, reads files
+    # Compare |Td(1)-Td(0)|> = < 0.05 Td(0)
+    # > (not fullfilled) returns -1
+    # < (fullfilled) returns 0
+    # = (exactly fullfilled) returns 1
+    #########################################
+    results = read_results(handle)
+    tlist = results[0]
+    sz0_min = results[1][:,0]
+    Td_0 = findTd(sz0_min, tlist)
+    sz1_min = results[1][:,1]
+    Td_1 = findTd(sz1_min, tlist)
+    diff = np.abs(Td_1-Td_0)
+    if diff > 0.05*Td_0:
+        return -1
+    elif diff == 0.05*Td_0:
+        return 1
+    elif diff < 0.05*Td_0:
+        return 0
     
 def cut_time(t_list, endtime):
     #########################################
