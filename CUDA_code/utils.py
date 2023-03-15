@@ -99,13 +99,13 @@ def crit_1(handle):
     Td_0 = findTd(sz0_min, tlist)
     sz1_min = results[1][:,1]
     Td_1 = findTd(sz1_min, tlist)
-    diff = np.abs(Td_1-Td_0)
-    if diff > 0.05*Td_0:
-        return -1
-    elif diff == 0.05*Td_0:
-        return 0
-    elif diff < 0.05*Td_0:
-        return 1
+    diff = np.abs(Td_1-Td_0) - 0.05*Td_0
+    if diff > 0:
+        return -1, diff
+    elif diff == 0:
+        return 0, diff
+    elif diff < 0:
+        return 1, diff
     
 def cut_time(t_list, endtime):
     #########################################
