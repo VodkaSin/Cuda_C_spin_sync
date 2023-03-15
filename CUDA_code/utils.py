@@ -103,9 +103,9 @@ def crit_1(handle):
     if diff > 0.05*Td_0:
         return -1
     elif diff == 0.05*Td_0:
-        return 1
-    elif diff < 0.05*Td_0:
         return 0
+    elif diff < 0.05*Td_0:
+        return 1
     
 def cut_time(t_list, endtime):
     #########################################
