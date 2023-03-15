@@ -76,14 +76,30 @@ def findTd(sz,t_list):
     # Returns -1 if sz does not go below 0.0
     # Loop through sz to find the first value <= 0.0
     #########################################
-  i=0
-  if sz[-1]>0.0:
-    return -1
-  while i<len(t_list):
-    if sz[i]>0.0:
-        i+=1
-    else:
-        return t_list[i]
+    i=0
+    if sz[-1]>0.0:
+        return -1
+    while i<len(t_list):
+        if sz[i]>0.0:
+            i+=1
+        else:
+            return t_list[i]
+
+def findT0(sz, t_list):
+    #########################################
+    # Returns the first time index that sz goes below -0.95
+    # Returns -1 if sz does not go below -0.95
+    # Loop through sz to find the first value <= -0.95
+    #########################################
+    i=0
+    if sz[-1]>-0.95:
+        return -1
+    while i<len(t_list):
+        if sz[i]>-0.95:
+            i+=1
+        else:
+            return i    
+    
 
 def crit_1(handle, tol):
     #########################################
@@ -95,10 +111,10 @@ def crit_1(handle, tol):
     #########################################
     results = read_results(handle)
     tlist = results[0]
-    sz0_min = results[1][:,0]
-    Td_0 = findTd(sz0_min, tlist)
-    sz1_min = results[1][:,1]
-    Td_1 = findTd(sz1_min, tlist)
+    sz0 = results[1][:,0]
+    Td_0 = findTd(sz0, tlist)
+    sz1 = results[1][:,1]
+    Td_1 = findTd(sz1, tlist)
     diff = np.abs(Td_1-Td_0) - 0.05*Td_0
     if diff > 0:
         return -1, diff
@@ -106,6 +122,27 @@ def crit_1(handle, tol):
         return 0, diff
     else:
         return 1, diff
+    
+def crit_2(handle, tol):
+    #########################################
+    # Input file handle, reads files
+    # Return True if when sz0 first crosses -0.95, 
+    # sz1 is less than -0.95 + tol. False otherwise
+    #########################################
+    results = read_results(handle)
+    tlist = results[0]
+    sz0 = results[1][:,0]
+    T0_0 = findT0(sz0, tlist)
+    if T0_0 == -1:
+        print("Warning: sz0 does not go below -0.95")
+    sz1 = results[1][:,1][T0_0]
+    if sz1 > tol-0.95:
+        return False
+    else:
+        return True
+    
+    
+    
     
 def cut_time(t_list, endtime):
     #########################################
