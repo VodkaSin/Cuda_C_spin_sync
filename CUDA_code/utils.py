@@ -92,7 +92,7 @@ def findT0(sz, t_list):
     # Loop through sz to find the first value <= -0.95
     #########################################
     i=0
-    if sz[-1]>-0.95:
+    if np.min(sz)>-0.95:
         return -1
     while i<len(t_list):
         if sz[i]>-0.95:
