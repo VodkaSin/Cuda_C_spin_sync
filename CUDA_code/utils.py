@@ -140,8 +140,33 @@ def crit_2(handle, tol):
         return False
     else:
         return True
+
+def Wt(sz, w0, detuning):
+    #########################################
+    # Returns the total energy given sz and detuninsg
+    # sz: (e.g.)
+    # array([[ 1.       ,  1.       ],
+    #        [ 1.       ,  1.       ],
+    #        [ 1.       ,  1.       ],
+    #        ...,
+    #        [-0.9986385,  0.9982722],
+    #        [-0.9986399,  0.9982717],
+    #        [-0.9986413,  0.9982712]], dtype=float64)
+    # detuning: array([  0, 140])
+    # Formula:
+    #   W(t)=sum w*(sz+1/2) (hbar=1)
+    #########################################
+    w = w0 + detuning
+    sz_shift = sz + 0.5
+    wsz_shift = w * sz_shift
+    wsz_sum = np.sum(wsz_shift,axis=1)
+    return wsz_sum
     
-    
+def diffentiate(dt, func):
+    #########################################
+    # Returns the differential of func, size -1
+    #########################################
+    return np.diff(func)/dt
     
     
 def cut_time(t_list, endtime):
