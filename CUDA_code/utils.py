@@ -141,7 +141,7 @@ def crit_2(handle, tol):
     else:
         return True
 
-def Wt(sz, w0, detuning):
+def Wt(sz, w0=None, detuning=None):
     #########################################
     # Returns the total energy given sz and detuninsg
     # sz: (e.g.)
@@ -156,7 +156,10 @@ def Wt(sz, w0, detuning):
     # Formula:
     #   W(t)=sum w*(sz+1/2) (hbar=1)
     #########################################
-    w = w0 + detuning
+    if detuning != None and w0!= None:
+        w = w0 + detuning
+    else:
+        w = 1
     sz_shift = sz + 0.5
     wsz_shift = w * sz_shift
     wsz_sum = np.sum(wsz_shift,axis=1)
