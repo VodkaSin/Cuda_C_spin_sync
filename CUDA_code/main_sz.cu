@@ -136,6 +136,7 @@ int main(int argc, char** argv) {
 	double* chi_a = new double[num_ens];
 	double* coup_a = new double[num_ens];
 	double* loss_a = new double[num_ens];
+	double* sz_init = new double[num_ens];
 
 	for (int i =0; i < num_ens; i++){
 		N_a[i] = ens_size;
@@ -155,11 +156,19 @@ int main(int argc, char** argv) {
 		exit(EXIT_FAILURE);
 	}
 
-
 	// Print out loaded data
 	// printf("Loaded detuning data into omega_a:\n");
 	// for (int i=0; i<num_ens; i++) {
 	// 	printf("%f\n", omega_a[i]);
+	// }
+
+	// Load SZ init data from "Sz_init.dat" into `sz_int` array.
+	int resLoadSzInit = loadDoubleData("Sz_init.dat", sz_init, num_ens);
+
+	// Print out loaded Sz_init data
+	// printf("Loaded Sz_init data into sz_init (result: %d):\n", resLoadSzInit);
+	// for (int i=0; i<num_ens; i++) {
+	// 	printf("%f\n", sz_init[i]);
 	// }
 
 	// Parameters related to the atoms concatenated
@@ -190,9 +199,23 @@ int main(int argc, char** argv) {
 	double* phi = new double[num_ens];
 
 	for (int i=0; i < num_ens; i++){
-		theta[i] = theta_0;
+
+		if (resLoadSzInit == 0) {
+			// If loaded sz_init.dat without problems (file exists and is compatible, i.e. the number of values == num_enms)
+			theta[i] = sz_init[i]*PI;
+		} else {
+			// If sz_init.dat file is not found, or the number of values in the file incompatible, use default theta_0*PI
+			theta[i] = theta_0;
+		}
+
 		phi[i] = phi_0;
 	}
+	
+	// Print out theta values
+	// printf("\n`theta` values:\n");
+	// for (int i=0; i<num_ens; i++) {
+	// 	printf("%f\n", theta[i]);
+	// }
 
 	// CSS = cos(theta/2)|g> + sin(theta/2)e^i*phi |e>
 	// cu coefficient for the excited state
@@ -255,7 +278,6 @@ int main(int argc, char** argv) {
 
 	for (int i= 0; i < num_ens; i++){
 		sz_1.x = (cu[i].x*cu[i].x + cu[i].y*cu[i].y) - (cl[i].x*cl[i].x + cl[i].y*cl[i].y); 
-		// sz_1.x = sz_file[i], sz_init.dat: [0,1,0,...]
 		sz_1.y = 0.; 
 		sm_1.x = cu[i].x*cl[i].x + cu[i].y*cl[i].y;
 		sm_1.y = -cu[i].x*cl[i].y + cu[i].y*cl[i].x; 
@@ -559,6 +581,7 @@ int main(int argc, char** argv) {
 // Returns int
 // - 0 if successful
 // - 1 if file not found
+// - 2 if number of values read from file is lower that out_size
 //
 // Example of how to load detuning data into a MxN sized matrix using `loadDoubleData()`
 // int M = 5; // The number of rows
@@ -580,7 +603,7 @@ int loadDoubleData(char* filename, double* out, int out_size) {
 	// Open file 
 	fp = fopen(filename, "r");
 	if (fp == NULL) {
-		printf("[loadDoubleData] Error: File (%s) does not exists\n", filename);
+		printf("[loadDoubleData] Error: File (%s) does not exist\n", filename);
 		// Return with error (1: file not found)
 		return 1;
 	}
@@ -617,6 +640,11 @@ int loadDoubleData(char* filename, double* out, int out_size) {
 	// Close file
 	fclose(fp);
 	
+	if (idx < out_size) {
+		// Return with error (2: number of values read is lower than expected out_size)
+		return 2;
+	}
+
 	// No error
 	return 0;
 }
