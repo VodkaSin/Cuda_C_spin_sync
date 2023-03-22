@@ -77,7 +77,7 @@ def findTd(sz,t_list):
     # Loop through sz to find the first value <= 0.0
     #########################################
     i=0
-    if sz[-1]>0.0:
+    if np.min(sz)>0.0:
         return -1
     while i<len(t_list):
         if sz[i]>0.0:
