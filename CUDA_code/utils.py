@@ -54,7 +54,7 @@ def unit_time(gk, N_spin, kappa):
     return Tr
 
 
-def delay_time(gk, N_spin, kappa):
+def delay_time(gk, N_spin, kappa,q0):
     #########################################
     # Calculates the delay time
     # Approximates the time <sz> reaches 0
@@ -64,9 +64,9 @@ def delay_time(gk, N_spin, kappa):
     #########################################
     Tr = unit_time(gk, N_spin, kappa)
     if N_spin > 10000:
-        Td =  Tr * np.log(N_spin)
+        Td =  Tr * np.log(N_spin/(q0+1))
     else:
-        Td = Tr * np.sum([1/(1+i) for i in range(N_spin)])
+        Td = Tr * np.sum([1/(1+i+q0) for i in range(N_spin)])
     return Td
 
 
