@@ -222,6 +222,11 @@ def runcmd(command):
     t = None        # `t` will be the progress bar object
     prev_pv = -1    # `prev_pv` will contain previous iteration's progress bar value (pv)
     
+    # Split command as a list of strings if it is a single string
+    # For e.g, this is needed for Popen() to work on Colab
+    if type(command) == str:
+        command = command.split(" ")
+    
     # Run the command as a subprocess
     process = Popen(command, stdout=PIPE, shell=False, stderr=STDOUT, bufsize=1, close_fds=True, universal_newlines=True)
     
