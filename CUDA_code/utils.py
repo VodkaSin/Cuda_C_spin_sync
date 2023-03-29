@@ -4,6 +4,7 @@ from scipy.stats import norm
 import re
 from subprocess import Popen, PIPE, STDOUT
 from tqdm import tqdm
+import time
 
 
 def gen_same_pop(k, max_det, pos=None):
@@ -208,9 +209,12 @@ def read_results(handle):
     return result_time, result_sz, result_coherences, result_photon
 
 
-def runcmd(command):
+def runcmd(command, update_interval=1):
     #########################################
     # Runs the given command and its options as a subprocess.
+    # Arguments: 
+    #           update_interval: Rate limits how often we update the progress bar. Default: 1 second
+    #
     # It redirects and intercepts all stdout and stderr 
     # so that it can process and decides what to print depending on the line.
     # For e.g if the stdout line is the progress bar from the command,
@@ -218,9 +222,11 @@ def runcmd(command):
     #
     # This came from a need to show the progress bar for a simulation run 
     # but the jupyter cell output don't like it very much. 
+    # 
     ########################################
-    t = None        # `t` will be the progress bar object
-    prev_pv = -1    # `prev_pv` will contain previous iteration's progress bar value (pv)
+    t = None             # Progress bar object
+    prev_pv = 0          # Contain previous iteration's progress bar value (pv)
+    last_update_time = 0 # Keeps track of when we last updated the progress bar
     
     # Split command as a list of strings if it is a single string
     # For e.g, this is needed for Popen() to work on Colab
@@ -240,27 +246,43 @@ def runcmd(command):
         # Check if we got the 'progress' line (e.g " 13% [|||||||        ]")
         progress = re.findall(r"^\s*(\d+)%\s*\[.*\].*", line)
         if (len(progress) > 0):
+            
             # Get the current progress value (pv)
             pv = int(progress[0])
             
+            # Calculate increment
+            inc = pv - prev_pv
+                
             # We only update the progress bar if its value is different from the prev iterations
-            if pv > prev_pv and pv < 100:
-                # Initialize progress bar
-                if t is None:
-                    bar_format = '{percentage:3.0f}% [{bar} ]'
-                    t = tqdm(total=100, bar_format=bar_format, colour='green')
+            if inc > 0:
                 
-                # Manually update the progress bar by passing in the increment
-                t.update(pv-prev_pv)
+                # Check if the rate limit allows an update
+                current_time = time.time()
                 
-                # Force refresh the bar
-                t.refresh()
+                # If it been at least X seconds since last update OR the progress is now at 100
+                if current_time - last_update_time >= update_interval or prev_pv + inc >= 100: 
+                    # Initialize progress bar
+                    if t is None:
+                        bar_format = '{percentage:3.0f}% [{bar} ]'
+                        t = tqdm(total=100, bar_format=bar_format, colour='green')
+                    
+                    # Manually update the progress bar by passing in the increment
+                    t.update(inc)
+                    
+                    # Force refresh the bar
+                    t.refresh()
+                    
+                    # Store the current line pv
+                    prev_pv = pv
                 
-                # Store the current line pv
-                prev_pv = pv
+                    # Store last update time
+                    last_update_time = current_time
+                    
+                    
+                    
         else:
             # Print line
-            print(line, end="") 
+            print(line, end="")
     
     # Clean up
     if t is not None:
